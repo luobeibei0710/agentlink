@@ -1,66 +1,138 @@
-# HAPI
+# AgentLink
 
-Run official Claude Code / Codex / Cursor Agent / Grok Build / OpenCode / Kimi / Copilot / Antigravity / Pi / DeepSeek Harness sessions and control them remotely through native iOS / Android apps, Web / PWA, or Telegram Mini App.
+在 Android 手机上接管电脑上运行的 **Codex** 与 **CodeBuddy** 会话：浏览历史项目、查看对话、审批等待中的操作，并在需要时切换权限档位。
 
-> **Why HAPI?** HAPI is a local-first alternative to Happy. See [Why Not Happy?](docs/guide/why-hapi.md) for the key differences.
+本项目基于 [HAPI](README-hapi.md)（本地优先的 AI Agent 远程控制框架）构建。HAPI 的 Hub / Runner / CLI / Web 都在这里，AgentLink 在其之上做了两件事：
 
-## Features
+1. 新增 **CodeBuddy provider**（HAPI 上游原本只支持 Claude / Codex / Cursor 等）；
+2. 提供一个**面向手机的产品化 Flutter 客户端**，替代上游的 Kotlin 客户端。
 
-- **Seamless Handoff** - Work locally, switch to remote when needed, switch back anytime. No context loss, no session restart.
-- **Shared Codex Sessions** - Use Codex from your terminal and phone at the same time. Requires Codex 0.154.0+. [Usage and limits](docs/guide/codex-shared-sessions.md).
-- **Native First** - HAPI wraps your AI agent instead of replacing it. Same terminal, same experience, same muscle memory.
-- **AFK Without Stopping** - Step away from your desk? Approve AI requests from your phone with one tap.
-- **Your AI, Your Choice** - Claude Code, Codex, Cursor Agent, Grok Build, OpenCode, Kimi, Copilot, Antigravity, Pi, DeepSeek Harness—different agents, one unified workflow.
-- **Terminal Anywhere** - Run commands from your phone's browser or desktop web app, directly connected to the working machine.
-- **Voice Control** - Use dictation in native apps, or talk to your AI agent hands-free with the web voice assistant.
-- **Workspace Browser** - Opt-in via one or more `hapi runner start --workspace-root <path>` flags: browse scoped file trees from the web and start sessions in allowed subdirectories.
+> 上游 HAPI 的完整说明保留在 [README-hapi.md](README-hapi.md)。
 
-## Demo
+## 架构
 
-https://github.com/user-attachments/assets/38230353-94c6-4dbe-9c29-b2a2cc457546
-
-## Getting Started
-
-```bash
-npx @twsxtd/hapi hub --relay     # start hub with E2E encrypted relay
-npx @twsxtd/hapi                 # choose an agent and start a session
+```
+┌─────────────────┐        ┌──────────────┐        ┌──────────────────────┐
+│  Flutter App    │  ⇄     │   HAPI Hub   │  ⇄     │   Runner (macOS)     │
+│  (Android)      │        │              │        │                      │
+│  · 项目 / 会话   │        │  · 会话同步   │        │  ┌────────────────┐  │
+│  · 对话渲染     │        │  · 权限路由   │        │  │ codex          │  │
+│  · 审批卡片     │        │  · 设备配对   │        │  │ codebuddy --acp│  │
+│  · 权限档位     │        │              │        │  └────────────────┘  │
+└─────────────────┘        └──────────────┘        └──────────────────────┘
 ```
 
-`hapi server` remains supported as an alias.
+局域网模式下由 `scripts/dev/agentlink-host.mjs` 同时拉起 Hub、Runner 与管理页：
 
-Use `hapi <agent> [options]` to start an agent directly, for example `hapi claude`
-or `hapi codex`. Scripts must specify the agent explicitly. `hapi --help` shows
-HAPI's commands and supported agents.
+| 服务 | 默认端口 | 说明 |
+| --- | --- | --- |
+| Hub | `3106` | REST API 与会话同步 |
+| 设备 TLS | `3107` | 固定指纹的设备连接 |
+| 局域网发现 | `3108` (UDP) | 广播发现电脑 |
+| 本机管理页 | `3109` | 仅监听 `127.0.0.1`，用于核对配对数字与撤销设备 |
 
-The hub displays a URL and two QR codes. Open the web URL in a browser, or pair a native app using the companion QR. See [Native apps](docs/guide/native-apps.md) for build and pairing instructions.
+## 目录
 
-> The relay uses WireGuard + TLS for end-to-end encryption. Your data is encrypted from your device to your machine.
+| 目录 | 内容 |
+| --- | --- |
+| `flutter/` | Android 客户端（Dart），本次交付的主体 |
+| `cli/` | Runner 与各 agent 适配，含 `cli/src/codebuddy/` |
+| `hub/` | 会话同步中枢与 HTTP 路由 |
+| `shared/` | 跨端协议、Schema 与权限档位定义 |
+| `web/` | Web 客户端 |
+| `scripts/dev/` | 局域网 Host、设备联调与冒烟脚本 |
+| `docs/` | 需求、架构与逐轮验证记录（见下方索引） |
+| `artifacts/` | 本地构建的 APK，**未纳入版本库** |
 
-For self-hosted options (Cloudflare Tunnel, Tailscale), see [Installation](docs/guide/installation.md)
+## 快速开始
 
-## Docs
+### 电脑端
 
-- [Native apps (iOS / Android)](docs/guide/native-apps.md)
-- [Web / PWA](docs/guide/pwa.md)
-- [How it Works](docs/guide/how-it-works.md)
-- [Supported Agents](docs/guide/agents.md)
-- [Voice Assistant](docs/guide/voice-assistant.md)
-- [Why HAPI](docs/guide/why-hapi.md)
-- [FAQ](docs/guide/faq.md)
-
-## Native apps (iOS / Android)
-
-The repository includes SwiftUI/UIKit and Kotlin Compose clients with chat, approvals, session creation, files, dictation, and push notifications. See the [native app guide](docs/guide/native-apps.md) for capabilities, platform differences and pairing. Build instructions: [iOS](ios/README.md) and [Android](android/README.md). Developer protocol: [client contract](docs/api/client-contract/index.md).
-
-## Build from source
-
-Requires Bun 1.4.0.
+需要一个 Bun 运行时（脚本会依次在 `~/.local/bin`、`~/.bun/bin`、Homebrew 路径下查找）：
 
 ```bash
-bun install
-bun run build:single-exe
+curl -fsSL https://bun.sh/install | bash    # 或 npm install -g bun
 ```
 
-## Credits
+然后**双击 `启动局域网连接.command`**，保持终端窗口打开。首次运行会打印配对二维码与管理页地址。
 
-HAPI means "哈皮" a Chinese transliteration of [Happy](https://github.com/slopus/happy). Great credit to the original project.
+如果希望手动启动：
+
+```bash
+HAPI_BUN_BIN="$HOME/.local/bin/bun" node scripts/dev/agentlink-host.mjs --lan
+```
+
+### 手机端
+
+```bash
+cd flutter
+flutter pub get
+flutter build apk --release
+# 产物：build/app/outputs/flutter-apk/app-release.apk
+```
+
+安装后：
+
+1. 手机与电脑连**同一个 Wi-Fi**；
+2. 打开 App → 「扫码或手动连接」→ 扫电脑上的二维码；
+3. 首次在电脑管理页核对 8 位数字后允许。
+
+## 功能
+
+**浏览**：`项目 → 会话 → 对话` 两段式下钻。工作台只显示项目名与状态点，会话列表每行只保留标题、状态与相对时间。
+
+**对话**：Markdown（代码块带语言标签与复制）、工具卡片（输入输出可展开）、ChatGPT 风格的思考行（默认一行灰字、点击展开）、与 Web 端一致的用量状态行。
+
+**审批**：待确认的操作按工具类型结构化展示 —— 命令类给命令行与工作目录，写入类给路径与改动行数，而不是把 JSON 参数直接铺在卡片上。命中 `rm -rf`、`sudo`、`git push --force` 等破坏性片段时会给出显式警示。
+
+**权限档位**：按 agent 过滤可用档位，且**在会话运行中实时生效**（不需要重启 agent）。
+
+| Agent | 档位 |
+| --- | --- |
+| Codex | 默认 / 只读 / 安全全自动 / 全自动 |
+| CodeBuddy | 默认 / 自动接受编辑 / 计划模式 / 自动 / 不询问 / 跳过权限检查 / 完全访问 / 由父会话管理 |
+| Claude / Cursor / Copilot | 见 `shared/src/modes.ts` |
+
+档位显示的是**电脑端上报的真实值**（`SessionSummary.permissionMode`），不是手机本地猜测。
+
+## 已知限制
+
+- **自动发现（UDP 广播）在部分路由器或机型上不通** —— 表现为「附近的电脑」扫不到。遇到时用扫码配对，这是可靠路径。
+- **不提供后台推送**。App 在前台每 2 秒同步；退到后台不会收到提醒。
+- **CodeBuddy IDE 的历史对话正文拿不到** —— 它存在云端，本地只有指针。IDE 项目会作为项目分组出现，但正文仅覆盖 CodeBuddy CLI 会话。
+- **仅支持 Android**。上游 HAPI 的 iOS 客户端未适配本项目新增的 CodeBuddy 能力。
+- 代码 Diff 视图、Mermaid / KaTeX 渲染尚未对齐 Web 端。
+
+## 开发
+
+```bash
+# 手机端
+cd flutter
+flutter analyze
+flutter test                    # 含渲染快照，见 test/goldens/
+
+# 电脑端
+bun run typecheck
+bun run test:cli
+```
+
+渲染快照覆盖了对话、项目列表、会话列表、配对页、设备页与审批卡片。更新快照前请先确认差异是预期的：
+
+```bash
+flutter test --update-goldens
+```
+
+## 文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [docs/agentlink-flutter.md](docs/agentlink-flutter.md) | 客户端架构、渲染对齐、UI 信息架构、权限模式与审批卡片 |
+| [docs/agentlink-validation.md](docs/agentlink-validation.md) | 1.0.0 真实联调记录 |
+| [docs/agentlink-ui-validation.md](docs/agentlink-ui-validation.md) | 1.1.0 界面改版的验收 |
+| [docs/agentlink-device-validation.md](docs/agentlink-device-validation.md) | 1.3.0 真机验收清单 |
+| [docs/agentlink-lan-validation.md](docs/agentlink-lan-validation.md) | 局域网模式验证 |
+| [docs/lan-host.md](docs/lan-host.md) | 电脑端局域网 Host 说明 |
+
+## 许可
+
+沿用上游 HAPI 的许可协议，见 [LICENSE](LICENSE)。
