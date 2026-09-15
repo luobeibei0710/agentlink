@@ -2,18 +2,13 @@
 
 在 Android 手机上接管电脑上运行的 **Codex** 与 **CodeBuddy** 会话：浏览历史项目、查看对话、审批等待中的操作，并在需要时切换权限档位。
 
-本项目基于 [HAPI](README-hapi.md)（本地优先的 AI Agent 远程控制框架）构建。HAPI 的 Hub / Runner / CLI / Web 都在这里，AgentLink 在其之上做了两件事：
-
-1. 新增 **CodeBuddy provider**（HAPI 上游原本只支持 Claude / Codex / Cursor 等）；
-2. 提供一个**面向手机的产品化 Flutter 客户端**，替代上游的 Kotlin 客户端。
-
-> 上游 HAPI 的完整说明保留在 [README-hapi.md](README-hapi.md)。
+代码库同时包含电脑端的调度服务与 Android 客户端。
 
 ## 架构
 
 ```
 ┌─────────────────┐        ┌──────────────┐        ┌──────────────────────┐
-│  Flutter App    │  ⇄     │   HAPI Hub   │  ⇄     │   Runner (macOS)     │
+│  Flutter App    │  ⇄     │     Hub      │  ⇄     │   Runner (macOS)     │
 │  (Android)      │        │              │        │                      │
 │  · 项目 / 会话   │        │  · 会话同步   │        │  ┌────────────────┐  │
 │  · 对话渲染     │        │  · 权限路由   │        │  │ codex          │  │
@@ -22,7 +17,7 @@
 └─────────────────┘        └──────────────┘        └──────────────────────┘
 ```
 
-局域网模式下由 `scripts/dev/agentlink-host.mjs` 同时拉起 Hub、Runner 与管理页：
+局域网模式由 `scripts/dev/agentlink-host.mjs` 同时拉起 Hub、Runner 与管理页：
 
 | 服务 | 默认端口 | 说明 |
 | --- | --- | --- |
@@ -35,20 +30,20 @@
 
 | 目录 | 内容 |
 | --- | --- |
-| `flutter/` | Android 客户端（Dart），本次交付的主体 |
+| `flutter/` | Android 客户端（Dart） |
 | `cli/` | Runner 与各 agent 适配，含 `cli/src/codebuddy/` |
 | `hub/` | 会话同步中枢与 HTTP 路由 |
 | `shared/` | 跨端协议、Schema 与权限档位定义 |
 | `web/` | Web 客户端 |
 | `scripts/dev/` | 局域网 Host、设备联调与冒烟脚本 |
-| `docs/` | 需求、架构与逐轮验证记录（见下方索引） |
+| `docs/` | 需求、架构与逐轮验证记录 |
 | `artifacts/` | 本地构建的 APK，**未纳入版本库** |
 
 ## 快速开始
 
 ### 电脑端
 
-需要一个 Bun 运行时（脚本会依次在 `~/.local/bin`、`~/.bun/bin`、Homebrew 路径下查找）：
+需要一个 Bun 运行时（`启动局域网连接.command` 会依次在 `~/.local/bin`、`~/.bun/bin`、Homebrew 路径下查找）：
 
 ```bash
 curl -fsSL https://bun.sh/install | bash    # 或 npm install -g bun
@@ -56,7 +51,7 @@ curl -fsSL https://bun.sh/install | bash    # 或 npm install -g bun
 
 然后**双击 `启动局域网连接.command`**，保持终端窗口打开。首次运行会打印配对二维码与管理页地址。
 
-如果希望手动启动：
+手动启动：
 
 ```bash
 HAPI_BUN_BIN="$HOME/.local/bin/bun" node scripts/dev/agentlink-host.mjs --lan
@@ -100,7 +95,7 @@ flutter build apk --release
 - **自动发现（UDP 广播）在部分路由器或机型上不通** —— 表现为「附近的电脑」扫不到。遇到时用扫码配对，这是可靠路径。
 - **不提供后台推送**。App 在前台每 2 秒同步；退到后台不会收到提醒。
 - **CodeBuddy IDE 的历史对话正文拿不到** —— 它存在云端，本地只有指针。IDE 项目会作为项目分组出现，但正文仅覆盖 CodeBuddy CLI 会话。
-- **仅支持 Android**。上游 HAPI 的 iOS 客户端未适配本项目新增的 CodeBuddy 能力。
+- **仅支持 Android**。
 - 代码 Diff 视图、Mermaid / KaTeX 渲染尚未对齐 Web 端。
 
 ## 开发
@@ -135,4 +130,4 @@ flutter test --update-goldens
 
 ## 许可
 
-沿用上游 HAPI 的许可协议，见 [LICENSE](LICENSE)。
+见 [LICENSE](LICENSE)。
