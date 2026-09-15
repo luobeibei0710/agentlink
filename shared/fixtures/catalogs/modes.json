@@ -49,6 +49,13 @@
                 "tone": "info"
             }
         ],
+        "codebuddy": [
+            {
+                "label": "Default",
+                "mode": "default",
+                "tone": "neutral"
+            }
+        ],
         "codex": [
             {
                 "label": "Default",

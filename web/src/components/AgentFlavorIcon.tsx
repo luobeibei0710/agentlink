@@ -13,6 +13,16 @@ import OpenCodeMono from '@lobehub/icons/es/OpenCode/components/Mono'
 import type { IconType } from '@lobehub/icons/es/types'
 import { CopilotIcon } from '@/components/icons/CopilotIcon'
 
+function CodeBuddyLogo({ size = '100%' }: { size?: string | number }) {
+    return (
+        <svg viewBox="0 0 64 64" width={size} height={size} fill="none">
+            <rect x="5" y="5" width="54" height="54" rx="15" fill="#635BFF" />
+            <path d="M39.5 18H28.25C21.48 18 16 23.48 16 30.25v3.5C16 40.52 21.48 46 28.25 46H39.5" stroke="white" strokeWidth="7" strokeLinecap="round" />
+            <path d="M34 25h9a7 7 0 0 1 0 14h-9V25Z" stroke="white" strokeWidth="6" strokeLinejoin="round" />
+        </svg>
+    )
+}
+
 // Brand logos per agent flavor. Color variant where it stays visible on both
 // light and dark surfaces (claude/codex/gemini); Mono (currentColor) where the
 // package ships no Color variant — or where, like KimiColor, the main glyph is
@@ -20,6 +30,7 @@ import { CopilotIcon } from '@/components/icons/CopilotIcon'
 const FLAVOR_LOGOS: Record<string, IconType> = {
     agy: AntigravityColor,
     claude: ClaudeColor,
+    codebuddy: CodeBuddyLogo as IconType,
     codex: CodexColor,
     dsh: DeepSeekColor,
     cursor: CursorMono,

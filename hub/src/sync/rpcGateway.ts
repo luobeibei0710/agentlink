@@ -5,6 +5,7 @@ import {
     AgentAvailabilityResponseSchema,
     CursorChatStoreStatusSchema,
     ListCodexSessionsRpcResponseSchema,
+    ListCodeBuddySessionsRpcResponseSchema,
     ListPiSessionsRpcResponseSchema
 } from '@hapi/protocol/apiTypes'
 import type {
@@ -26,6 +27,7 @@ import type {
     GrokReasoningEffortResponse,
     ListDirectoryResponse,
     ListCodexSessionsRpcResponse,
+    ListCodeBuddySessionsRpcResponse,
     ListPiSessionsRpcResponse,
     ArchiveCodexSessionRpcResponse,
     OpencodeModelsResponse,
@@ -82,6 +84,7 @@ export type RpcCodexModel = CodexModelSummary
 export type RpcListCodexModelsResponse = CodexModelsResponse
 export type RpcListCodexSessionsResponse = ListCodexSessionsRpcResponse
 export type RpcListPiSessionsResponse = ListPiSessionsRpcResponse
+export type RpcListCodeBuddySessionsResponse = ListCodeBuddySessionsRpcResponse
 export type RpcArchiveCodexSessionResponse = ArchiveCodexSessionRpcResponse
 export type RpcCursorModel = CursorModelSummary
 export type RpcListCursorModelsResponse = CursorModelsResponse
@@ -403,6 +406,11 @@ export class RpcGateway {
     async listPiSessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[]): Promise<RpcListPiSessionsResponse> {
         const result = await this.machineRpc(machineId, RPC_METHODS.ListPiSessions, { cwd: cwd ?? null, sessionIds }, MODEL_LIST_RPC_TIMEOUT_MS)
         return ListPiSessionsRpcResponseSchema.parse(result)
+    }
+
+    async listCodeBuddySessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[]): Promise<RpcListCodeBuddySessionsResponse> {
+        const result = await this.machineRpc(machineId, RPC_METHODS.ListCodeBuddySessions, { cwd: cwd ?? null, sessionIds }, MODEL_LIST_RPC_TIMEOUT_MS)
+        return ListCodeBuddySessionsRpcResponseSchema.parse(result)
     }
 
     async archiveCodexSessionForMachine(machineId: string, sessionId: string): Promise<RpcArchiveCodexSessionResponse> {

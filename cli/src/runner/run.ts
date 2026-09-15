@@ -1556,8 +1556,16 @@ export function buildCliArgs(
   if (agent === 'gemini') {
     throw new Error('Gemini CLI is no longer supported and cannot be launched (Google sunset the consumer Gemini CLI on 2026-06-18).');
   }
+  // CodeBuddy 的权限档位与电脑端 CLI 一致（8 档，由其 ACP configOptions 定义），
+  // 合法性由 shared 的 isPermissionModeAllowedForFlavor 统一校验；这里只拦它
+  // 不接受的 --yolo 简写。
+  if (agent === 'codebuddy' && yolo === true) {
+    throw new Error('CodeBuddy does not accept the yolo shortcut; use --permission-mode bypassPermissions');
+  }
   const agentCommand = agent === 'codex'
     ? 'codex'
+    : agent === 'codebuddy'
+      ? 'codebuddy'
     : agent === 'cursor'
       ? 'cursor'
       : agent === 'grok'
@@ -1604,6 +1612,7 @@ export function buildCliArgs(
       || agent === 'opencode'
       || agent === 'agy'
       || agent === 'dsh'
+      || agent === 'codebuddy'
       || (agentCommand === 'claude' && options.forkSession)) {
     const existingSessionId = options.existingSessionId ?? options.sessionId;
     if (existingSessionId) {

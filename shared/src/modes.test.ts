@@ -31,6 +31,9 @@ describe('Gemini CLI sunset (read-only, not creatable)', () => {
 })
 
 describe('getPermissionModesForFlavor', () => {
+    test('CodeBuddy exposes only its standard ask-before-tools mode', () => {
+        expect(getPermissionModesForFlavor('codebuddy')).toEqual(['default'])
+    })
     test("returns the conservative Grok modes", () => {
         expect(getPermissionModesForFlavor('grok')).toEqual([
             'default',
@@ -69,6 +72,12 @@ describe('getPermissionModeOptionsForFlavor', () => {
 })
 
 describe('isPermissionModeAllowedForFlavor', () => {
+    test('CodeBuddy rejects automatic and bypass permission modes', () => {
+        expect(isPermissionModeAllowedForFlavor('default', 'codebuddy')).toBe(true)
+        expect(isPermissionModeAllowedForFlavor('auto', 'codebuddy')).toBe(false)
+        expect(isPermissionModeAllowedForFlavor('yolo', 'codebuddy')).toBe(false)
+        expect(isPermissionModeAllowedForFlavor('bypassPermissions', 'codebuddy')).toBe(false)
+    })
     test("allows only the supported Grok modes", () => {
         expect(isPermissionModeAllowedForFlavor('default', 'grok')).toBe(true)
         expect(isPermissionModeAllowedForFlavor('plan', 'grok')).toBe(true)

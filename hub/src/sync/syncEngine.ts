@@ -2467,6 +2467,7 @@ export class SyncEngine {
         }
 
         const flavor = this.resolveFlavor(session)
+        if (flavor === 'codebuddy') return metadata.codebuddySessionId ?? null
         if (flavor === 'codex') {
             return metadata.codexSessionId ?? this.recoverCodexSessionIdFromMessages(session.id, namespace)
         }
@@ -2952,6 +2953,10 @@ export class SyncEngine {
         }
 
         const requiresPiNativeReady = flavor === 'pi' && resumeToken !== undefined
+        const requiresCodeBuddyReady = flavor === 'codebuddy' && resumeToken !== undefined
+        if (requiresCodeBuddyReady) {
+            this.sessionReadyIds.delete(access.sessionId)
+        }
         if (requiresPiNativeReady) {
             if (this.isPiResumeBlocked(access.sessionId)) {
                 return { type: 'error', message: 'Pi resume is already in progress', code: 'resume_failed' }
@@ -3126,6 +3131,7 @@ export class SyncEngine {
 
             const needsReadyBeforeSuccess = resumedStartingMode === 'pty'
                 || requiresPiNativeReady
+                || requiresCodeBuddyReady
                 || (
                     spawnResult.sessionId !== access.sessionId
                     && flavor === 'cursor'
@@ -3202,6 +3208,10 @@ export class SyncEngine {
                         ? readyResult === 'ended'
                             ? 'Pi session ended before native resume completed'
                             : 'Pi session failed to become native-ready'
+                        : flavor === 'codebuddy'
+                            ? readyResult === 'ended'
+                                ? 'CodeBuddy session ended before ACP history resume completed'
+                                : 'CodeBuddy ACP history resume failed to become ready'
                         : resumedStartingMode === 'pty'
                             ? readyResult === 'ended'
                                 ? 'Session ended before the agent PTY became ready'
@@ -4009,6 +4019,10 @@ export class SyncEngine {
 
     async listPiSessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[]): Promise<RpcListPiSessionsResponse> {
         return await this.rpcGateway.listPiSessionsForMachine(machineId, cwd, sessionIds)
+    }
+
+    async listCodeBuddySessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[]) {
+        return await this.rpcGateway.listCodeBuddySessionsForMachine(machineId, cwd, sessionIds)
     }
 
     async archiveCodexSessionForMachine(machineId: string, sessionId: string): Promise<RpcArchiveCodexSessionResponse> {

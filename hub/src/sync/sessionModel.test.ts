@@ -2322,6 +2322,54 @@ describe('session model', () => {
         }
     })
 
+    it('reopens CodeBuddy in place only after the ACP load-ready barrier', async () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(store, {} as never, new RpcRegistry(), { broadcast() {} } as never)
+        try {
+            const session = engine.getOrCreateSession('codebuddy-in-place', {
+                path: '/tmp/project',
+                host: 'localhost',
+                machineId: 'machine-1',
+                flavor: 'codebuddy',
+                codebuddySessionId: 'codebuddy-native-1',
+                lifecycleState: 'archived',
+                archivedBy: 'cli',
+                archiveReason: 'CodeBuddy exited'
+            }, null, 'default')
+            engine.getOrCreateMachine(
+                'machine-1',
+                { host: 'localhost', platform: 'linux', happyCliVersion: '0.1.0' },
+                null,
+                'default'
+            )
+            engine.handleMachineAlive({ machineId: 'machine-1', time: Date.now() })
+            engine.handleSessionEnd({ sid: session.id, time: Date.now() })
+
+            let resumeId: string | undefined
+            let existingId: string | undefined
+            let readyWaits = 0
+            ;(engine as any).rpcGateway.spawnSession = async (...args: Parameters<SyncEngine['spawnSession']>) => {
+                resumeId = args[8]
+                existingId = args[12]
+                engine.handleSessionAlive({ sid: session.id, time: Date.now() })
+                return { type: 'success', sessionId: session.id }
+            }
+            ;(engine as any).waitForSessionActive = async () => true
+            ;(engine as any).waitForSessionReady = async () => {
+                readyWaits += 1
+                return 'ready'
+            }
+
+            const result = await engine.reopenSession(session.id, 'default')
+            expect(result).toEqual({ type: 'success', sessionId: session.id, resumed: true })
+            expect(resumeId).toBe('codebuddy-native-1')
+            expect(existingId).toBe(session.id)
+            expect(readyWaits).toBe(1)
+        } finally {
+            engine.stop()
+        }
+    })
+
     it('reopens Pi in place only after native-ready, preserving its id and history', async () => {
         const store = new Store(':memory:')
         const engine = new SyncEngine(store, {} as never, new RpcRegistry(), { broadcast() {} } as never)
@@ -3050,6 +3098,44 @@ describe('session model', () => {
                     agentSessionId: 'grok-session-1',
                     model: 'grok-4.5',
                     effort: 'low'
+                })
+            }
+        } finally {
+            engine.stop()
+        }
+    })
+
+    it('resolves a local resume target from the CodeBuddy ACP id', () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(
+            store,
+            {} as never,
+            new RpcRegistry(),
+            { broadcast() {} } as never
+        )
+
+        try {
+            const session = engine.getOrCreateSession(
+                'local-resume-codebuddy',
+                {
+                    path: '/tmp/project',
+                    host: 'localhost',
+                    machineId: 'machine-1',
+                    flavor: 'codebuddy',
+                    codebuddySessionId: 'codebuddy-session-1',
+                    codexSessionId: 'stale-codex-id'
+                },
+                { controlledByUser: false },
+                'default'
+            )
+
+            const result = engine.resolveLocalResumeTarget(session.id, 'default')
+            expect(result.type).toBe('success')
+            if (result.type === 'success') {
+                expect(result.target).toMatchObject({
+                    flavor: 'codebuddy',
+                    agentSessionId: 'codebuddy-session-1',
+                    permissionMode: undefined
                 })
             }
         } finally {

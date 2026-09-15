@@ -79,3 +79,20 @@ android/captures/
 # drop in their own) — never commit a real one. The committed placeholder is
 # android/app/google-services.json.example.
 android/app/google-services.json
+
+# Android build output under flutter/ — the `android/**/build/` rule above is
+# anchored to the root android/ module and does not cover flutter/android/.
+flutter/android/build/
+flutter/android/app/.cxx/
+flutter/android/.kotlin/
+
+# Kotlin protocol copy kept next to src/ (identical content, different layout).
+# Ignored to avoid duplicating ~80 files that already live in src/.
+android/core/protocol/bin/
+
+# Locally built APK deliverables. Regenerated per build and large (~66MB each),
+# so they stay on disk rather than in history.
+artifacts/
+
+# Golden test diff output, regenerated on every failing run.
+flutter/test/failures/

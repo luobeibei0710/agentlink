@@ -19,6 +19,21 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('sessionResume', () => {
+    it('uses only the CodeBuddy ACP id to gate native resume', () => {
+        const metadata = {
+            path: '/p',
+            host: 'h',
+            flavor: 'codebuddy',
+            codebuddySessionId: 'codebuddy-1',
+            codexSessionId: 'stale-codex-1'
+        } as const
+        expect(resolveAgentSessionIdFromMetadata(metadata)).toBe('codebuddy-1')
+        expect(inactiveSessionCanResume(makeSession({ metadata }), 3)).toBe(true)
+        expect(inactiveSessionCanResume(makeSession({
+            metadata: { path: '/p', host: 'h', flavor: 'codebuddy' }
+        }), 3)).toBe(false)
+    })
+
     it('resolveAgentSessionIdFromMetadata picks the id matching the session flavor', () => {
         expect(resolveAgentSessionIdFromMetadata({
             path: '/p',

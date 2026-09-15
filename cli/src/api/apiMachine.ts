@@ -11,10 +11,12 @@ import type { ClientToServerEvents, ServerToClientEvents, Update, UpdateMachineB
 import {
     ArchiveCodexSessionRpcRequestSchema,
     ListCodexSessionsRpcRequestSchema,
+    ListCodeBuddySessionsRpcRequestSchema,
     ListPiSessionsRpcRequestSchema,
     type ArchiveCodexSessionRpcResponse,
     type AgentAvailabilityResponse,
     type ListCodexSessionsRpcResponse,
+    type ListCodeBuddySessionsRpcResponse,
     type ListPiSessionsRpcResponse,
     type MachineDirectoryEntry,
     type MachineListDirectoryResponse,
@@ -53,6 +55,7 @@ import type { SpawnSessionOptions, SpawnSessionResult } from '../modules/common/
 import { applyVersionedAck } from './versionedUpdate'
 import { archiveLocalCodexSession, listLocalCodexSessionSummaries, listLocalCodexSessionsWithMessagesByIds } from '../modules/common/codexSessions'
 import { listLocalPiSessionSummaries, listLocalPiSessionsWithMessagesByIds } from '../modules/common/piSessions'
+import { listLocalCodeBuddySessionSummaries, listLocalCodeBuddySessionsWithMessagesByIds } from '../modules/common/codebuddySessions'
 import { buildSocketIoExtraHeaderOptions } from './hubExtraHeaders'
 import { collectMachineHealth } from '@/utils/machineHealth'
 import { inspectCursorChatStore } from '@/cursor/cursorChatStoreStatus'
@@ -370,6 +373,31 @@ export class ApiMachineClient {
                 const allSessions = requestedIds
                     ? listLocalPiSessionsWithMessagesByIds(requestedIds)
                     : listLocalPiSessionSummaries()
+                const sessions = []
+                for (const session of allSessions) {
+                    if (await this.isLocalSessionWithinWorkspaceRoots(session)) sessions.push(session)
+                }
+                return { success: true, sessions }
+            }
+        )
+
+        // CodeBuddy 历史保存在本机 projects 目录，只按会话 id 精确读取时返回完整消息。
+        this.rpcHandlerManager.registerHandler<unknown, ListCodeBuddySessionsRpcResponse>(
+            RPC_METHODS.ListCodeBuddySessions,
+            async (params) => {
+                const parsed = ListCodeBuddySessionsRpcRequestSchema.safeParse(params)
+                if (!parsed.success) return { success: false, error: 'Invalid CodeBuddy sessions request' }
+                const rawCwd = typeof parsed.data.cwd === 'string' ? parsed.data.cwd.trim() : ''
+                if (rawCwd) {
+                    const resolvedCwd = await this.pathPolicy.resolveForCheck(rawCwd)
+                    if (!this.pathPolicy.isWithinSpawnRoots(resolvedCwd)) {
+                        return { success: false, error: 'Path is outside workspace roots' }
+                    }
+                }
+                const requestedIds = parsed.data.sessionIds ? new Set(parsed.data.sessionIds) : null
+                const allSessions = requestedIds
+                    ? listLocalCodeBuddySessionsWithMessagesByIds(requestedIds)
+                    : listLocalCodeBuddySessionSummaries()
                 const sessions = []
                 for (const session of allSessions) {
                     if (await this.isLocalSessionWithinWorkspaceRoots(session)) sessions.push(session)

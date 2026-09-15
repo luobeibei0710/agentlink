@@ -8,6 +8,7 @@ type LaunchEnvironment = Record<string, string | undefined>
 const DEFAULT_COMMANDS: Record<AgentFlavor, string> = {
     agy: 'agy',
     claude: 'claude',
+    codebuddy: 'codebuddy',
     codex: 'codex',
     copilot: 'copilot',
     cursor: 'agent',
@@ -26,6 +27,7 @@ export function getAgentLaunchCommand(
 ): string {
     if (flavor === 'claude') return env.HAPI_CLAUDE_PATH?.trim() || DEFAULT_COMMANDS.claude
     if (flavor === 'copilot') return env.COPILOT_CLI_PATH?.trim() || DEFAULT_COMMANDS.copilot
+    if (flavor === 'codebuddy') return env.HAPI_CODEBUDDY_ACP_COMMAND?.trim() || DEFAULT_COMMANDS.codebuddy
     if (flavor === 'dsh') return env.HAPI_DSH_ACP_COMMAND?.trim() || DEFAULT_COMMANDS.dsh
     return DEFAULT_COMMANDS[flavor]
 }

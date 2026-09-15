@@ -1,0 +1,2 @@
+export type CodeBuddyMode = 'codebuddy'
+

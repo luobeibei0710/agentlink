@@ -1501,13 +1501,14 @@ export class SessionCache {
 
     private extractAgentSessionId(
         metadata: NonNullable<Session['metadata']>
-    ): { field: 'codexSessionId' | 'claudeSessionId' | 'geminiSessionId' | 'opencodeSessionId' | 'grokSessionId' | 'cursorSessionId' | 'piSessionId' | 'agySessionId' | 'copilotSessionId'; value: string; dedupeKey: string; machineId?: string } | null {
-        const scoped = (field: 'codexSessionId' | 'claudeSessionId' | 'geminiSessionId' | 'opencodeSessionId' | 'grokSessionId' | 'cursorSessionId' | 'piSessionId' | 'agySessionId' | 'copilotSessionId', value: string) => ({
+    ): { field: 'codebuddySessionId' | 'codexSessionId' | 'claudeSessionId' | 'geminiSessionId' | 'opencodeSessionId' | 'grokSessionId' | 'cursorSessionId' | 'piSessionId' | 'agySessionId' | 'copilotSessionId'; value: string; dedupeKey: string; machineId?: string } | null {
+        const scoped = (field: 'codebuddySessionId' | 'codexSessionId' | 'claudeSessionId' | 'geminiSessionId' | 'opencodeSessionId' | 'grokSessionId' | 'cursorSessionId' | 'piSessionId' | 'agySessionId' | 'copilotSessionId', value: string) => ({
             field,
             value,
             dedupeKey: field === 'piSessionId' ? `${field}:${metadata.machineId ?? 'unscoped'}:${value}` : `${field}:${value}`,
             ...(field === 'piSessionId' && metadata.machineId ? { machineId: metadata.machineId } : {})
         })
+        if (metadata.codebuddySessionId) return scoped('codebuddySessionId', metadata.codebuddySessionId)
         if (metadata.codexSessionId) return scoped('codexSessionId', metadata.codexSessionId)
         if (metadata.claudeSessionId) return scoped('claudeSessionId', metadata.claudeSessionId)
         if (metadata.geminiSessionId) return scoped('geminiSessionId', metadata.geminiSessionId)

@@ -274,6 +274,48 @@ export type PiLocalSessionWithMessages = z.infer<typeof PiLocalSessionWithMessag
 export type ListPiSessionsRpcRequest = z.infer<typeof ListPiSessionsRpcRequestSchema>
 export type ListPiSessionsRpcResponse = z.infer<typeof ListPiSessionsRpcResponseSchema>
 
+export const CodeBuddyImportedMessageContentSchema = CodexImportedMessageSchema
+
+export const CodeBuddyImportedMessageSchema = z.object({
+    localId: z.string().min(1),
+    createdAt: z.number().nullable(),
+    content: CodeBuddyImportedMessageContentSchema
+})
+
+export const CodeBuddyLocalSessionSummarySchema = z.object({
+    id: z.string().min(1),
+    title: z.string(),
+    lastUserMessage: z.string().nullable().optional(),
+    cwd: z.string().nullable().optional(),
+    file: z.string().min(1),
+    modifiedAt: z.number(),
+    messageCount: z.number().int().nonnegative()
+})
+
+export const CodeBuddyLocalSessionWithMessagesSchema = CodeBuddyLocalSessionSummarySchema.extend({
+    messages: z.array(CodeBuddyImportedMessageSchema)
+})
+
+export const ListCodeBuddySessionsRpcRequestSchema = z.object({
+    cwd: z.string().nullable().optional(),
+    sessionIds: z.array(z.string().min(1)).optional()
+})
+
+export const ListCodeBuddySessionsRpcResponseSchema = z.union([
+    z.object({
+        success: z.literal(true),
+        sessions: z.array(z.union([CodeBuddyLocalSessionWithMessagesSchema, CodeBuddyLocalSessionSummarySchema]))
+    }),
+    z.object({ success: z.literal(false), error: z.string() })
+])
+
+export type CodeBuddyImportedMessageContent = z.infer<typeof CodeBuddyImportedMessageContentSchema>
+export type CodeBuddyImportedMessage = z.infer<typeof CodeBuddyImportedMessageSchema>
+export type CodeBuddyLocalSessionSummary = z.infer<typeof CodeBuddyLocalSessionSummarySchema>
+export type CodeBuddyLocalSessionWithMessages = z.infer<typeof CodeBuddyLocalSessionWithMessagesSchema>
+export type ListCodeBuddySessionsRpcRequest = z.infer<typeof ListCodeBuddySessionsRpcRequestSchema>
+export type ListCodeBuddySessionsRpcResponse = z.infer<typeof ListCodeBuddySessionsRpcResponseSchema>
+
 export const SessionCollaborationModeRequestSchema = z.object({
     mode: CodexCollaborationModeSchema
 })

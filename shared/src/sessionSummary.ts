@@ -1,6 +1,6 @@
 import type { AgentState, Metadata, Session, TodoItem, WorktreeMetadata } from './schemas'
 import { isKnownFlavor } from './flavors'
-import type { AgentFlavor } from './modes'
+import type { AgentFlavor, PermissionMode } from './modes'
 
 export type PendingRequestKind = 'permission' | 'input'
 
@@ -75,6 +75,8 @@ export type SessionSummary = {
     model: string | null
     modelReasoningEffort?: string | null
     effort: string | null
+    /** 会话当前生效的权限档位；客户端用它显示实际档位而不是本地猜测。 */
+    permissionMode?: PermissionMode
 }
 
 // Re-exported as a standalone derivation so SSE patch handlers can recompute
@@ -151,6 +153,7 @@ export function computeTodoProgress(todos: TodoItem[] | undefined): SessionSumma
 
 const AGENT_SESSION_ID_FIELD_BY_FLAVOR: Partial<Record<AgentFlavor, keyof Metadata>> = {
     claude: 'claudeSessionId',
+    codebuddy: 'codebuddySessionId',
     codex: 'codexSessionId',
     gemini: 'geminiSessionId',
     opencode: 'opencodeSessionId',
@@ -226,6 +229,7 @@ export function toSessionSummary(session: Session): SessionSummary {
         nextScheduledAt: null,
         model: session.model,
         modelReasoningEffort: session.modelReasoningEffort,
-        effort: session.effort
+        effort: session.effort,
+        permissionMode: session.permissionMode
     }
 }

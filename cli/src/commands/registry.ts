@@ -3,6 +3,7 @@ import { agyCommand } from './agy'
 import { authCommand } from './auth'
 import { claudeCommand } from './claude'
 import { codexCommand } from './codex'
+import { codeBuddyCommand } from './codebuddy'
 import { dshCommand } from './dsh'
 import { cursorCommand } from './cursor'
 import { connectCommand } from './connect'
@@ -43,6 +44,7 @@ const COMMANDS: CommandDefinition[] = [
     authCommand,
     claudeCommand,
     connectCommand,
+    codeBuddyCommand,
     codexCommand,
     dshCommand,
     cursorCommand,

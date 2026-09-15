@@ -27,6 +27,7 @@ import { createGitRoutes } from './routes/git'
 import { createCliRoutes } from './routes/cli'
 import { createCodexDesktopRoutes } from './routes/codexDesktop'
 import { createPiSessionRoutes } from './routes/piSessions'
+import { createCodeBuddySessionRoutes } from './routes/codebuddySessions'
 import { createPushRoutes } from './routes/push'
 import { createDevicesRoutes } from './routes/devices'
 import { createVoiceRoutes } from './routes/voice'
@@ -300,6 +301,11 @@ function createWebApp(options: {
         getSyncEngine: options.getSyncEngine
     }))
     app.route('/api', createPiSessionRoutes({
+        store: options.store,
+        getSyncEngine: options.getSyncEngine
+    }))
+    // 中文注释：扫描本机 CodeBuddy 会话记录并按需导入，供手机端浏览与恢复历史对话。
+    app.route('/api', createCodeBuddySessionRoutes({
         store: options.store,
         getSyncEngine: options.getSyncEngine
     }))

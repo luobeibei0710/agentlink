@@ -33,6 +33,11 @@ describe('hasCapability', () => {
         expect(hasCapability('dsh', Capabilities.Effort)).toBe(false)
     })
 
+    test('CodeBuddy does not advertise unimplemented runtime model or effort switching', () => {
+        expect(hasCapability('codebuddy', Capabilities.ModelChange)).toBe(false)
+        expect(hasCapability('codebuddy', Capabilities.Effort)).toBe(false)
+    })
+
     test('codex supports model-change but not effort', () => {
         expect(hasCapability('codex', Capabilities.ModelChange)).toBe(true)
         expect(hasCapability('codex', Capabilities.Effort)).toBe(false)
@@ -82,6 +87,7 @@ describe('getFlavorLabel', () => {
     test('known flavors return display names', () => {
         expect(getFlavorLabel('agy')).toBe('Antigravity')
         expect(getFlavorLabel('claude')).toBe('Claude')
+        expect(getFlavorLabel('codebuddy')).toBe('CodeBuddy')
         expect(getFlavorLabel('gemini')).toBe('Gemini')
         expect(getFlavorLabel('codex')).toBe('Codex')
         expect(getFlavorLabel('dsh')).toBe('DeepSeek Harness')
@@ -107,6 +113,7 @@ describe('isKnownFlavor', () => {
     test('returns true for registered flavors', () => {
         expect(isKnownFlavor('agy')).toBe(true)
         expect(isKnownFlavor('claude')).toBe(true)
+        expect(isKnownFlavor('codebuddy')).toBe(true)
         expect(isKnownFlavor('gemini')).toBe(true)
         expect(isKnownFlavor('codex')).toBe(true)
         expect(isKnownFlavor('dsh')).toBe(true)

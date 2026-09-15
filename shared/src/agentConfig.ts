@@ -59,6 +59,7 @@ function fields(...fields: AgentConfigFieldDescriptor[]): AgentConfigFieldDescri
 const BUILTIN_DESCRIPTORS: Record<AgentFlavor, AgentConfigFieldDescriptor[]> = {
     agy: fields({ ...MODEL, optionSource: 'machine' }, PERMISSION),
     claude: fields(MODEL, { id: 'effort', section: 'effort', kind: 'select', optionSource: 'static', availability: 'both' }, PERMISSION),
+    codebuddy: fields(PERMISSION),
     codex: fields(
         { ...MODEL, optionSource: 'machine' },
         { id: 'effort', section: 'effort', kind: 'select', optionSource: 'model', availability: 'both' },
@@ -103,6 +104,8 @@ export function resolveHapiYoloPermissionMode(flavor: AgentFlavor): PermissionMo
             return 'bypassPermissions'
         case 'agy':
             return 'always-proceed'
+        case 'codebuddy':
+            return null
         case 'codex':
         case 'copilot':
         case 'cursor':

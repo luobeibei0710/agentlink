@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
     notification: vi.fn(),
     checkPathsExists: vi.fn(),
     availableAgents: [
-        'agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi'
+        'agy', 'claude', 'codebuddy', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi'
     ].map((agent) => ({ agent, available: true })),
     codexModelsLoading: false,
     agyModelsLoading: false,
@@ -291,7 +291,7 @@ describe('NewSession launch preferences', () => {
         mocks.availableAgents.splice(
             0,
             mocks.availableAgents.length,
-            ...['agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi']
+            ...['agy', 'claude', 'codebuddy', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi']
                 .map((agent) => ({ agent, available: true }))
         )
         mocks.codexModelsLoading = false

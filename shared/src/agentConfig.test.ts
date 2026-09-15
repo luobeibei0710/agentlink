@@ -37,6 +37,16 @@ describe('agent config descriptors', () => {
         expect(resolveHapiYoloPermissionMode('dsh')).toBeNull()
     })
 
+    test('keeps CodeBuddy on explicit standard approvals', () => {
+        const descriptor = getAgentConfigDescriptor('codebuddy')
+        expect(descriptor.fields).toEqual([expect.objectContaining({
+            id: 'permission',
+            kind: 'select',
+            availability: 'both'
+        })])
+        expect(resolveHapiYoloPermissionMode('codebuddy')).toBeNull()
+    })
+
     test('reports Pi permission as managed rather than pretending YOLO applies', () => {
         const descriptor = getAgentConfigDescriptor('pi')
         expect(descriptor.fields).toContainEqual(expect.objectContaining({

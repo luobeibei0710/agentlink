@@ -44,7 +44,7 @@ async function main(): Promise<void> {
         const __filename = fileURLToPath(import.meta.url);
         scriptDir = dirname(__filename);
     } else {
-        scriptDir = dirname(new URL(import.meta.url).pathname);
+        scriptDir = dirname(fileURLToPath(import.meta.url));
     }
     const toolsDir = join(scriptDir, '..', '..', 'shared', 'tools', 'tunwg');
 

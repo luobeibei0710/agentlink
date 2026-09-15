@@ -1,0 +1,78 @@
+import 'package:companion/agentlink_theme.dart';
+import 'package:companion/app_model.dart';
+import 'package:companion/domain.dart';
+import 'package:companion/main.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  testWidgets('renders approval cards for command, file, and network tools', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2200);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    final model = AppModel(persistState: false);
+    final requests = [
+      // 破坏性命令：应出现危险提示。
+      PendingRequest(
+        id: '1',
+        tool: 'Bash',
+        kind: 'permission',
+        args: {
+          'command': 'rm -rf node_modules && npm install',
+          'cwd': '/Users/llvision/Desktop/商业化项目/hapi-codebuddy-android',
+        },
+      ),
+      // 写文件：路径 + 改动行数。
+      PendingRequest(
+        id: '2',
+        tool: 'Write',
+        kind: 'permission',
+        args: {
+          'file_path': '/Users/llvision/Desktop/hapi-codebuddy-android/lib/main.dart',
+          'content': List.filled(42, 'line').join('\n'),
+        },
+      ),
+      PendingRequest(
+        id: '3',
+        tool: 'WebFetch',
+        kind: 'permission',
+        args: {'url': 'https://example.com/spec'},
+      ),
+      // 未知工具：退化成键值对而不是裸 JSON。
+      PendingRequest(
+        id: '4',
+        tool: 'Mystery',
+        kind: 'permission',
+        args: {'alpha': 1, 'beta': 'two'},
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: agentLinkTheme(),
+        home: Scaffold(
+          body: ListView(
+            padding: const EdgeInsets.all(AgentLinkSpace.lg),
+            children: [
+              for (final request in requests)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AgentLinkSpace.md),
+                  child: RequestCard(model: model, request: request),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(ListView),
+      matchesGoldenFile('goldens/approval_cards.png'),
+    );
+    model.dispose();
+  });
+}

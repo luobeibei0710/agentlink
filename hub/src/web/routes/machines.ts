@@ -90,11 +90,18 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             return c.json({ error: 'Invalid body' }, 400)
         }
         if (
-            (parsed.data.agent === 'agy' || parsed.data.agent === 'dsh')
+            (parsed.data.agent === 'agy' || parsed.data.agent === 'codebuddy' || parsed.data.agent === 'dsh')
             && parsed.data.startingMode
             && parsed.data.startingMode !== 'remote'
         ) {
             return c.json({ error: `${parsed.data.agent.toUpperCase()} only supports remote mode` }, 400)
+        }
+        if (
+            parsed.data.agent === 'codebuddy'
+            && (parsed.data.yolo === true
+                || (parsed.data.permissionMode !== undefined && parsed.data.permissionMode !== 'default'))
+        ) {
+            return c.json({ error: 'CodeBuddy only supports the default permission mode' }, 400)
         }
         const startingMode = parsed.data.startingMode
 

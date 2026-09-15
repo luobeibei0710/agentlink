@@ -2,6 +2,7 @@ import type { AgentFlavor } from '@hapi/protocol'
 
 /** Agents that share codex-family permission modes (default / read-only / safe-yolo / yolo). */
 export const CODEX_FAMILY_PERMISSION_AGENTS = [
+    'codebuddy',
     'codex',
     'gemini',
     'kimi',

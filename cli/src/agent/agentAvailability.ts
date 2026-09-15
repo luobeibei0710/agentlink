@@ -8,6 +8,7 @@ import {
 } from '@hapi/protocol'
 import { getDefaultClaudeCodePath } from '@/claude/sdk/utils'
 import { resolveCodexCommand } from '@/codex/utils/codexExecutable'
+import { resolveCodeBuddyAcpCommand } from '@/codebuddy/utils/codeBuddyBackend'
 import { resolveDshAcpCommand } from '@/dsh/utils/dshBackend'
 import { getAgentLaunchCommand, resolveExecutable } from './agentLaunchCommand'
 
@@ -31,6 +32,9 @@ function resolveLaunchSpec(agent: AgentFlavor, env: LaunchEnvironment, context: 
             return { command: env.HAPI_CODEX_APP_SERVER_BIN.trim(), args: [] }
         }
         return resolveCodexCommand(env)
+    }
+    if (agent === 'codebuddy') {
+        return resolveCodeBuddyAcpCommand(env)
     }
     if (agent === 'dsh') {
         return resolveDshAcpCommand(env)

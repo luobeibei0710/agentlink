@@ -60,6 +60,24 @@ describe('agent executable resolution', () => {
         })
     })
 
+    it('checks the exact configured CodeBuddy ACP executable', async () => {
+        const directory = await mkdtemp(join(tmpdir(), 'hapi-agent-path-'))
+        const codebuddy = await makeExecutable(directory, 'codebuddy-custom')
+
+        expect(getAgentAvailability('codebuddy', {
+            PATH: '',
+            HAPI_CODEBUDDY_ACP_COMMAND: codebuddy
+        })).toEqual({ agent: 'codebuddy', available: true })
+        expect(getAgentAvailability('codebuddy', {
+            PATH: directory,
+            HAPI_CODEBUDDY_ACP_ARGS_JSON: '["--permission-mode", "auto"]'
+        })).toEqual({
+            agent: 'codebuddy',
+            available: false,
+            reason: 'invalid_configuration'
+        })
+    })
+
     it('uses the configured Codex app-server executable for availability', async () => {
         const directory = await mkdtemp(join(tmpdir(), 'hapi-agent-path-'))
         const codex = await makeExecutable(directory, 'codex-app-server')

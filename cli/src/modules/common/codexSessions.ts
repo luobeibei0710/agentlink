@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, statSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join, relative } from 'node:path'
 import { homedir } from 'node:os'
@@ -6,6 +6,14 @@ import { AGENT_MESSAGE_PAYLOAD_TYPE } from '@hapi/protocol'
 import { isCodexSubagentSource } from '@/codex/utils/codexSessionMetadata'
 
 const DEFAULT_CODEX_SESSION_SCAN_LIMIT = 200
+
+// 摘要扫描只读取会话文件的首尾窗口。Codex 会话文件平均数 MB（本机约 1940 个文件合计
+// 约 9GB），而列表所需信息集中在头部（session_meta、首条用户消息）与尾部（最后一次改
+// 标题、最后一条用户消息）。整文件读取会让列表 RPC 远超超时。
+const CODEX_SESSION_HEAD_BYTES = 512 * 1024
+const CODEX_SESSION_TAIL_BYTES = 512 * 1024
+// 会话元数据解析只考察头部前若干行，与原实现保持一致。
+const CODEX_SESSION_HEAD_LINES = 200
 
 type CodexSessionIndexTitle = {
     threadName: string
@@ -299,15 +307,65 @@ function deduplicateAdjacentImportedMessages(messages: CodexImportedMessageConte
     return deduped
 }
 
+/**
+ * 读取会话来解析摘要所需的头部与尾部窗口。
+ *
+ * 文件小于两个窗口之和时直接整读，结果与整文件读取完全一致。
+ * 否则分别读取首部与尾部，并各自丢弃被窗口边界截断的那一行，
+ * 避免把半行 JSON 交给解析器。
+ *
+ * @param filePath 会话 jsonl 文件路径
+ * @param headBytes 头部窗口字节数
+ * @param tailBytes 尾部窗口字节数
+ * @returns headLines 头部完整行（最多覆盖 CODEX_SESSION_HEAD_LINES）；tailLines 尾部完整行
+ */
+function readCodexSessionEdges(
+    filePath: string,
+    headBytes = CODEX_SESSION_HEAD_BYTES,
+    tailBytes = CODEX_SESSION_TAIL_BYTES
+): { headLines: string[]; tailLines: string[] } {
+    let size = 0
+    try { size = statSync(filePath).size } catch { return { headLines: [], tailLines: [] } }
+    if (size <= headBytes + tailBytes) {
+        let content: string
+        try { content = readFileSync(filePath, 'utf-8') } catch { return { headLines: [], tailLines: [] } }
+        const lines = content.split(/\r?\n/).filter(Boolean)
+        return { headLines: lines, tailLines: lines }
+    }
+    const readWindow = (start: number, length: number): string => {
+        let fd: number | null = null
+        try {
+            fd = openSync(filePath, 'r')
+            const buffer = Buffer.alloc(length)
+            const read = readSync(fd, buffer, 0, length, start)
+            return buffer.subarray(0, read).toString('utf-8')
+        } catch {
+            return ''
+        } finally {
+            if (fd !== null) { try { closeSync(fd) } catch { /* 关闭失败不影响已读内容 */ } }
+        }
+    }
+    const headWindow = readWindow(0, headBytes).split(/\r?\n/)
+    const headLines = headWindow.slice(0, -1).filter(Boolean)
+    const tailWindow = readWindow(size - tailBytes, tailBytes).split(/\r?\n/)
+    const tailLines = tailWindow.slice(1).filter(Boolean)
+    return { headLines, tailLines }
+}
+
 function parseCodexLocalSession(
     filePath: string,
     includeMessages: boolean,
     sessionIndexTitles = new Map<string, CodexSessionIndexTitle>()
 ): LocalCodexSessionWithMessages | LocalCodexSessionSummary | null {
-    let content: string
-    try { content = readFileSync(filePath, 'utf-8') } catch { return null }
-    const lines = content.split(/\r?\n/).filter(Boolean)
-    const headLines = lines.slice(0, 200)
+    let content: string | null = null
+    if (includeMessages) {
+        try { content = readFileSync(filePath, 'utf-8') } catch { return null }
+    }
+    const lines = content === null ? [] : content.split(/\r?\n/).filter(Boolean)
+    // 导入需要完整消息，因此沿用整文件结果；列表只取首尾窗口。
+    const edges = content === null ? readCodexSessionEdges(filePath) : { headLines: lines, tailLines: lines }
+    const tailLines = edges.tailLines.length ? edges.tailLines : lines
+    const headLines = edges.headLines.slice(0, CODEX_SESSION_HEAD_LINES)
     let sessionId: string | null = null
     let cwd: string | null = null
     let originator: string | null = null
@@ -356,8 +414,9 @@ function parseCodexLocalSession(
     sessionId = sessionId ?? inferSessionIdFromFileName(filePath)
     if (!sessionId) return null
     const sessionIndexTitle = sessionIndexTitles.get(sessionId)?.threadName ?? null
-    const changedTitle = getLatestCodexChangedTitle(lines)
-    const lastUserMessage = getLatestCodexUserMessage(lines)
+    // 两个取值都是从后往前找“最新”，因此尾部窗口即可覆盖；整文件读取仅在导入模式发生。
+    const changedTitle = getLatestCodexChangedTitle(tailLines)
+    const lastUserMessage = getLatestCodexUserMessage(tailLines)
     let modifiedAt = Date.now()
     try { modifiedAt = statSync(filePath).mtimeMs } catch {}
     const summary = {

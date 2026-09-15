@@ -7,7 +7,7 @@ import { z } from 'zod'
  */
 export const AGENT_MESSAGE_PAYLOAD_TYPE = 'codex' as const
 
-export const AGENT_FLAVORS = ['agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'gemini', 'grok', 'kimi', 'opencode', 'pi'] as const
+export const AGENT_FLAVORS = ['agy', 'claude', 'codebuddy', 'codex', 'dsh', 'copilot', 'cursor', 'gemini', 'grok', 'kimi', 'opencode', 'pi'] as const
 export type AgentFlavor = typeof AGENT_FLAVORS[number]
 export const AgentFlavorSchema = z.enum(AGENT_FLAVORS)
 
@@ -27,6 +27,23 @@ export type ClaudePermissionMode = typeof CLAUDE_PERMISSION_MODES[number]
 
 export const CODEX_PERMISSION_MODES = ['default', 'read-only', 'safe-yolo', 'yolo'] as const
 export type CodexPermissionMode = typeof CODEX_PERMISSION_MODES[number]
+
+/**
+ * CodeBuddy 的权限档位，取自其 ACP 服务端在 `session/new` 时下发的
+ * `configOptions[category=mode]`（实机探测确认），因此与电脑端 CLI 完全一致，
+ * 并且可以用 `session/set_config_option` 在会话运行中切换。
+ */
+export const CODEBUDDY_PERMISSION_MODES = [
+    'default',
+    'acceptEdits',
+    'plan',
+    'auto',
+    'dontAsk',
+    'bypassPermissions',
+    'fullAccess',
+    'delegate'
+] as const
+export type CodeBuddyPermissionMode = typeof CODEBUDDY_PERMISSION_MODES[number]
 
 export const CODEX_COLLABORATION_MODES = ['default', 'plan'] as const
 export type CodexCollaborationMode = typeof CODEX_COLLABORATION_MODES[number]
@@ -62,7 +79,11 @@ export const PERMISSION_MODES = [
     'safe-yolo',
     'yolo',
     'request-review',
-    'always-proceed'
+    'always-proceed',
+    // CodeBuddy 特有的档位（来自其 ACP configOptions，其他 agent 不使用）
+    'dontAsk',
+    'fullAccess',
+    'delegate'
 ] as const
 export type PermissionMode = typeof PERMISSION_MODES[number]
 
@@ -80,7 +101,10 @@ export const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {
     'safe-yolo': 'Safe Yolo',
     yolo: 'Yolo',
     'request-review': 'Request Review',
-    'always-proceed': 'Always Proceed'
+    'always-proceed': 'Always Proceed',
+    dontAsk: "Don't Ask",
+    fullAccess: 'Full Access',
+    delegate: 'Delegate'
 }
 
 export type PermissionModeTone = 'neutral' | 'info' | 'warning' | 'danger'
@@ -98,7 +122,11 @@ export const PERMISSION_MODE_TONES: Record<PermissionMode, PermissionModeTone> =
     'safe-yolo': 'warning',
     yolo: 'danger',
     'request-review': 'neutral',
-    'always-proceed': 'danger'
+    'always-proceed': 'danger',
+    // dontAsk 会静默拒绝未预授权的操作，不是「更宽松」而是「不再询问」。
+    dontAsk: 'warning',
+    fullAccess: 'danger',
+    delegate: 'neutral'
 }
 
 export type PermissionModeOption = {
@@ -130,6 +158,9 @@ export function getCodexCollaborationModeLabel(mode: CodexCollaborationMode): st
 }
 
 export function getPermissionModesForFlavor(flavor?: string | null): readonly PermissionMode[] {
+    if (flavor === 'codebuddy') {
+        return CODEBUDDY_PERMISSION_MODES
+    }
     if (flavor === 'codex') {
         return CODEX_PERMISSION_MODES
     }

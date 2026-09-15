@@ -12,6 +12,7 @@ export type Capability = typeof Capabilities[keyof typeof Capabilities]
 const FLAVOR_CAPS: Record<AgentFlavor, ReadonlySet<Capability>> = {
     agy: new Set([Capabilities.ModelChange]),
     claude: new Set([Capabilities.ModelChange, Capabilities.Effort]),
+    codebuddy: new Set(),
     gemini: new Set([Capabilities.ModelChange]),
     kimi: new Set([Capabilities.ModelChange]),
     copilot: new Set([Capabilities.ModelChange]),
@@ -27,6 +28,7 @@ const FLAVOR_CAPS: Record<AgentFlavor, ReadonlySet<Capability>> = {
 const FLAVOR_LABELS: Record<AgentFlavor, string> = {
     agy: 'Antigravity',
     claude: 'Claude',
+    codebuddy: 'CodeBuddy',
     gemini: 'Gemini',
     kimi: 'Kimi',
     copilot: 'Copilot',
@@ -63,7 +65,8 @@ export function supportsEffort(flavor: string | null | undefined): boolean {
 }
 
 export function isCodexFamilyFlavor(flavor: string | null | undefined): boolean {
-    return flavor === 'codex'
+    return flavor === 'codebuddy'
+        || flavor === 'codex'
         || flavor === 'gemini'
         || flavor === 'grok'
         || flavor === 'kimi'

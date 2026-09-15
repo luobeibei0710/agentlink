@@ -430,7 +430,7 @@ describe('machines routes', () => {
         app.use('*', async (c, next) => { c.set('namespace', 'default'); await next() })
         app.route('/api', createMachinesRoutes(() => engine as SyncEngine))
 
-        for (const agent of ['agy', 'dsh']) {
+        for (const agent of ['agy', 'codebuddy', 'dsh']) {
             for (const startingMode of ['local', 'pty']) {
                 const response = await app.request('/api/machines/machine-1/spawn', {
                     method: 'POST',
@@ -439,6 +439,31 @@ describe('machines routes', () => {
                 })
                 expect(response.status).toBe(400)
             }
+        }
+    })
+
+    it('rejects CodeBuddy automatic or bypass permission requests before runner spawn', async () => {
+        const machine = createMachine()
+        const spawnSession = () => { throw new Error('must not spawn') }
+        const engine = {
+            getMachine: () => machine,
+            getMachineByNamespace: () => machine,
+            spawnSession,
+        } as unknown as Partial<SyncEngine>
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => { c.set('namespace', 'default'); await next() })
+        app.route('/api', createMachinesRoutes(() => engine as SyncEngine))
+
+        for (const body of [
+            { directory: '/tmp/x', agent: 'codebuddy', yolo: true },
+            { directory: '/tmp/x', agent: 'codebuddy', permissionMode: 'auto' }
+        ]) {
+            const response = await app.request('/api/machines/machine-1/spawn', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(body)
+            })
+            expect(response.status).toBe(400)
         }
     })
 

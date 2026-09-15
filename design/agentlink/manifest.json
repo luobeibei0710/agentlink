@@ -1,0 +1,8 @@
+{
+  "name": "AgentLink Android Screens",
+  "id": "agentlink-local-design-20260913",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": ["figma"],
+  "networkAccess": {"allowedDomains": ["none"]}
+}

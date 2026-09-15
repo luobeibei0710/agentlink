@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { fileURLToPath } from 'node:url'
 import {
     APNS_HOSTS,
     DEFAULT_RELAY_PORT,
@@ -86,7 +87,7 @@ describe('loadConfigFromEnv', () => {
 
 describe('readRelayVersion', () => {
     test('reports the version from relay/package.json', async () => {
-        const pkg = await Bun.file(new URL('../package.json', import.meta.url).pathname).json() as {
+        const pkg = await Bun.file(fileURLToPath(new URL('../package.json', import.meta.url))).json() as {
             version: string
         }
         expect(await readRelayVersion()).toBe(pkg.version)

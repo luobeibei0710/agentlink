@@ -22,10 +22,10 @@ function pickOptionId(request: PermissionRequest, preferredKinds: string[]): str
         const match = request.options.find((option) => option.kind === kind)
         if (match) return match.optionId
     }
-    return request.options[0]?.optionId ?? null
+    return null
 }
 
-function mapDecisionToOutcome(
+export function mapAcpPermissionDecision(
     request: PermissionRequest,
     decision: PermissionResponseMessage['decision']
 ): PermissionResponse {
@@ -86,7 +86,7 @@ export class AcpPermissionHandler extends BasePermissionHandler<PermissionRespon
         toolInput: unknown,
         decision: AutoApprovalDecision
     ): Promise<void> {
-        await this.backend.respondToPermission(request.sessionId, request, mapDecisionToOutcome(request, decision))
+        await this.backend.respondToPermission(request.sessionId, request, mapAcpPermissionDecision(request, decision))
         const timestamp = Date.now()
         this.client.updateAgentState((currentState) => ({
             ...currentState,
@@ -116,7 +116,7 @@ export class AcpPermissionHandler extends BasePermissionHandler<PermissionRespon
             await this.backend.cancelPrompt(request.sessionId)
         }
         if (request) {
-            await this.backend.respondToPermission(request.sessionId, request, mapDecisionToOutcome(request, decision))
+            await this.backend.respondToPermission(request.sessionId, request, mapAcpPermissionDecision(request, decision))
         }
         pending.resolve()
 

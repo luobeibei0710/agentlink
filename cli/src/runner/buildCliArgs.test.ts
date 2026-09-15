@@ -368,6 +368,32 @@ describe('buildCliArgs', () => {
         ])
     })
 
+    it('builds an exact resumable CodeBuddy command with standard permissions only', () => {
+        expect(buildCliArgs('codebuddy', {
+            directory: '/tmp',
+            resumeSessionId: 'native-codebuddy-id',
+            existingSessionId: 'existing-hub-id',
+            startingMode: 'remote',
+            permissionMode: 'default'
+        })).toEqual([
+            'codebuddy',
+            '--resume', 'native-codebuddy-id',
+            '--hapi-starting-mode', 'remote',
+            '--started-by', 'runner',
+            '--existing-session-id', 'existing-hub-id',
+            '--permission-mode', 'default'
+        ])
+    })
+
+    it('fails closed before spawning CodeBuddy with automatic approval inputs', () => {
+        expect(() => buildCliArgs('codebuddy', { directory: '/tmp' }, true))
+            .toThrow('default permission mode')
+        expect(() => buildCliArgs('codebuddy', {
+            directory: '/tmp',
+            permissionMode: 'auto'
+        })).toThrow('default permission mode')
+    })
+
     it('does not emit --hapi-session-id for a non-pty flavor', () => {
         const args = buildCliArgs('opencode', {
             directory: '/tmp',
