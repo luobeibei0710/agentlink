@@ -128,6 +128,181 @@ curl -X POST -H "Authorization: Bearer <JWT>" -H 'Content-Type: application/json
   启动中等状态改用次级文字色而非无样式正文；路径字段补了 `在电脑上运行 pwd 即可看到`
   的提示。
 
+## 会话交互：离线会话自动恢复
+
+历史会话导入后在电脑上没有对应进程（`active=false`）。早期版本要求用户先点一次头部
+的「继续会话」才能输入，而输入框此时是禁用状态 —— 用户进入会话的第一反应是「点一下
+输入框」，得到的却是没反应。现在改为：
+
+- **输入框始终可用**。离线会话的提示语是「输入消息，发送后自动启动会话…」。
+- **发送时自动恢复**：`AppModel.sendOrResume` 先恢复会话，成功后再投递消息；
+  恢复失败则不发送，避免消息落到已归档的会话上。
+- **启动期间即时反馈**：按钮转圈 + 头部状态显示「正在启动…」，不必等下一次轮询。
+- **启动期间缩短轮询**：由 2 秒改为 600 毫秒，让「已结束 → 在线」尽快显示；恢复
+  结束后自动回到 2 秒。
+
+恢复可能让电脑端新建一个活跃会话（id 变化）。模型会把 `selectedSession` 切到新 id，
+`Chat` 用 `ValueKey(selectedSession)` 作为 key，因此会话切换时整个输入区会重建，
+草稿由模型迁移到新 id 上承载。
+
+头部的「继续会话」按钮保留，用于「只想启动、暂不发送消息」的场景。
+
+对话页头部的状态依次取：`正在启动…`（本地恢复中）→ `已归档`（离线）→ `运行中`
+（执行中）→ `在线`。
+
+## 消息滚动与审批呈现
+
+**消息始终跟随最新**：`_ChatState` 监听模型变化，消息条数增加时自动滚到底部。只在
+用户本来就贴着底部时跟随（距底 120px 以内），他主动往上翻看历史时不会被打断。
+
+**审批改为弹出确认层**。此前待确认请求固定在消息列表上方，一条长命令会把对话区按住
+好几屏 —— 而用户往往正想看下面的新回复。现在：
+
+- 出现新请求时自动弹出底部确认层（同一请求只自动弹一次）；
+- 收起后，输入区上方留一个「N 项操作等待确认 · 点击处理」提示条可重新打开；
+- 确认层里的命令详情**默认收起**，只留「查看命令详情」入口，需要核对时再展开；
+- **危险提示不受折叠影响**：命中 `rm -rf` / `sudo` 等破坏性片段时始终显式可见。
+  折叠是为了少占屏幕，不是为了让人盲批。
+
+确认层用 `AnimatedBuilder` 订阅模型：提交后电脑端裁决会改变请求状态，内容随即刷新，
+而不是停在打开时的快照。
+
+## 模型选择
+
+会话头部提供模型入口（芯片图标），只对 Codex 与 CodeBuddy 会话显示。两者的列表来源不同，
+但对外是同一个问题，客户端归一成 `ModelOption`：
+
+| Agent | 列表来源 | 当前值来源 |
+| --- | --- | --- |
+| Codex | `GET /api/sessions/:id/codex-models`（已有） | 会话摘要 `model` |
+| CodeBuddy | `GET /api/sessions/:id/codebuddy-models`（新增） | 会话摘要 `model` |
+
+切换都走 `POST /api/sessions/:id/model`。
+
+列表拉取返回 **null 与空列表含义不同**：null 表示这个会话不支持换模型（界面不显示入口），
+空列表才会被当成「有入口但没有可选模型」。混用会让用户点开一个空面板。
+
+### CodeBuddy 侧的关键发现
+
+能力表原先把 CodeBuddy 标为不支持换模型（`shared/src/flavors.ts` 的 `codebuddy: new Set()`），
+实测下来这个判断不成立。它的 ACP 服务端在 `config_option_update` 里下发了 **4 组配置**：
+
+- `mode` —— 8 档权限模式
+- **`model` —— 15+ 个模型，每个带展示名与计费倍率**（如 `Hy4 preview` / `x0.29 credits`）
+- `thought_level` —— 7 档思考等级
+- `sandbox` —— 沙箱开关
+
+且 `session/set_config_option` 配 `configId='model'` 可以**运行中切换**（实机验证通过）。
+
+之所以一直没被发现，是因为 `AcpSdkBackend` **只从 `session/new` 的响应捕获 configOptions，
+不处理 `config_option_update` 通知** —— 这也正是权限档位当初要靠硬编码 `configId` 绕过的原因。
+本轮把通知接进 `handleSessionUpdate` 后，模型列表自然就能取到。
+
+改动清单：
+
+| 文件 | 改动 |
+| --- | --- |
+| `cli/src/agent/backends/acp/constants.ts` | 补 `configOptionUpdate` 通知类型 |
+| `cli/src/agent/backends/acp/AcpSdkBackend.ts` | 从通知捕获 configOptions；选项保留 `description` |
+| `cli/src/codebuddy/codeBuddyRemoteLauncher.ts` | `modelMode` 由 `ignore` 改为 `nullable`，新增 `applyModel`，注册 `listCodebuddyModels` |
+| `cli/src/codebuddy/session.ts` | 新增 `setModel`（keepAlive 随之上报） |
+| `shared/src/flavors.ts` | CodeBuddy 补 `ModelChange` 能力 |
+| `shared/src/rpcMethods.ts` / `hub/src/sync/rpcGateway.ts` / `hub/src/sync/syncEngine.ts` / `hub/src/web/routes/sessions.ts` | 打通列举模型的 RPC 与路由 |
+
+## 用量
+
+AppBar 的图表图标进入用量页，数据来自电脑端 `GET /api/usage/summary`：
+
+| 区块 | 内容 |
+| --- | --- |
+| 总计 | 总 token、输入/输出/缓存读写、请求数、会话数 |
+| 按 Agent | Codex 与 CodeBuddy 各自的消耗 |
+| 按模型 | 按 token 降序，命中缓存的收益看「未缓存」 |
+| 每日 | 柱状，长按显示具体数值 |
+
+范围可切 `7d` / `30d` / `all`；页面打开时拉一次，不参与轮询。
+
+**口径**：电脑端只统计**本 Host 管理**的会话。导入的历史不计入 —— `usageService` 在解析阶段
+就排除了 `hapiUsageScope === 'imported-history'` 的事件，所以这里的数字比电脑上跑过的总量小。
+
+**时区**：按天分组依赖 IANA 时区名，而 Dart 只暴露时区缩写与偏移量。客户端用等价的固定偏移
+时区 `Etc/GMT±N` 代替（中国等无夏令时的地区完全等价），非整点偏移（如印度 +5:30）退回 UTC。
+
+### 历史用量
+
+用量页分两组展示，因为两种口径**不能相加**：
+
+| 组 | 含义 | 算法 |
+| --- | --- | --- |
+| **本机消耗** | 由本 Host 管理期间产生的用量 | 累计值按流求差 |
+| **历史累计** | 导入的会话各自的总量 | 取每个会话**最后一条**累计快照 |
+
+第二组依赖 `usage_events.scope`（schema v27）。CLI 给重放的历史打了
+`hapiUsageScope: 'imported-history'`，而早期实现的做法是**在解析阶段直接丢弃**，
+于是导入的历史在用量页上完全不可见。现在改为记录来源、汇总时分流，而不是二选一。
+
+来源判定（`parseUsageEvent` 的 `scope`）：
+
+- 有 `imported-history` 标记 → `imported`
+- 或：会话是导入的（`codexSourceSessionId` / `lifecycleState === 'imported'`）
+  **且**消息没有显式 `threadId` → `imported`（更早版本留下的数据没有标记，靠会话身份兜底）
+- 其余 → `managed`
+
+历史组刻意**不做增量求差**：累计值的起点在 HAPI 之外，差值会少算掉那一段，
+只有"取最后一条"才是这个会话在该范围内的总量。
+
+实测效果（83 个导入会话）：本机 0.08M，历史 3871M。首次查询会回填全量历史，
+本机数据量下约 2.5 秒。
+
+## 上下文用量与账户额度
+
+### 上下文百分比的口径
+
+状态行里的 `Context 75k / 258k (29%)` 取的是**本轮请求**的输入量（`info.last`）。
+此前取的是会话累计值（`info.total`），而累计输入是会话至今所有请求的总和，会远超
+窗口 —— 实测出现过 `Context 69.8M / 258.4k (27027%)` 这种荒谬结果。现在三端
+（Flutter `domain.dart`、Web `presentation.ts`、Android `ToolPresentation.kt`）
+口径一致：Context 用本轮值，`out` / `cached` / `reasoning` 仍用累计值（它们表达
+的是这个会话至今的消耗，两种口径各自成立）。早期载荷没有 `last` 时退回累计值。
+
+### 账户额度
+
+Codex 把账户额度搭在 `token_count` 事件上一起下发（另有一条独立的
+`account/rateLimits/updated` 通知），字段是套餐、各时间窗已用比例与重置时间：
+
+```json
+{ "primary":   { "used_percent": 99, "window_minutes": 10080, "resets_at": 1789819456 },
+  "secondary": { "used_percent": 97, "window_minutes": 10080, "resets_at": 1788455712 },
+  "plan_type": "pro",
+  "credits":   { "has_credits": false, "unlimited": false, "balance": "0" } }
+```
+
+`window_minutes` 的常见取值：300（5 小时）、10080（7 天）、43200（30 天）。
+`resets_at` 是**秒**，客户端会按量级归一成毫秒。Codex 只在真正受限时填
+`primary` / `secondary`，平时是 null —— 所以不能因为字段为空就判定「没有额度」。
+
+数据链路与各环节原先的问题：
+
+1. **CLI**（`cli/src/codex/utils/appServerEventConverter.ts`）原本把
+   `account/rateLimits/updated` **直接丢弃**，额度从来没出过电脑。现在归一成
+   camelCase 的 `rateLimits` 随 `token_count` 下发（两套键名都接受）。
+2. **Hub 导入历史**（`hub/src/web/routes/codexDesktop.ts`）原本要求 `info` 非空，
+   而只带额度的 `token_count` 是 `info: null`，会被整条丢掉。现在保留。
+3. **App**（`app_model.dart` 的 `_trackRateLimits`）从已经在轮询的消息流里取最新
+   快照 —— 不新增接口、不额外轮询。用量页顶部由 `_QuotaCard` 展示；拿不到时说明
+   原因，而不是留白。
+
+**CodeBuddy 没有额度来源**：ACP 下发的 4 组 configOptions（mode / model /
+thought_level / sandbox）不含额度，其 Web 侧的 `/v2/billing/*` 端点也未在本仓库
+实现。所以额度卡片只对 Codex 会话有效，CodeBuddy 会话下会停在「还没有读到额度
+信息」的说明上。
+
+### 用量页的缺失状态
+
+`loadUsage` 在未连接时会写入 `error`，页面据此区分两种情况：读不到（显示错误原因
+与「重新读取」按钮）与真的没有数据（显示空状态）。此前两者共用一句「这段时间没有
+用量」，用户看到只会以为历史丢了 —— 而真实原因往往是请求根本没发出去。
+
 ## 权限模式
 
 会话头部提供权限模式入口（盾牌图标），走电脑端的 `POST /api/sessions/:id/permission-mode`：

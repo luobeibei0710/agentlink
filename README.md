@@ -80,6 +80,10 @@ flutter build apk --release
 
 **审批**：待确认的操作按工具类型结构化展示 —— 命令类给命令行与工作目录，写入类给路径与改动行数，而不是把 JSON 参数直接铺在卡片上。命中 `rm -rf`、`sudo`、`git push --force` 等破坏性片段时会给出显式警示。
 
+**用量与额度**：顶部「用量」入口按 `7 天 / 30 天 / 全部` 分别展示**本机消耗**与**历史累计**（两者口径不同，刻意不相加），并展示 Codex 的**账户额度** —— 套餐、各时间窗已用比例与重置时间。额度搭在消息流里下发，不额外轮询。
+
+**公网连接**：除局域网外，可用 Cloudflare 隧道把电脑暴露到公网，手机不在同一 Wi-Fi 时也能用。见 [docs/public-host.md](docs/public-host.md)。
+
 **权限档位**：按 agent 过滤可用档位，且**在会话运行中实时生效**（不需要重启 agent）。
 
 | Agent | 档位 |
@@ -93,6 +97,8 @@ flutter build apk --release
 ## 已知限制
 
 - **自动发现（UDP 广播）在部分路由器或机型上不通** —— 表现为「附近的电脑」扫不到。遇到时用扫码配对，这是可靠路径。
+- **Cloudflare 快速隧道的随机域名在国内 DNS 上有同步延迟** —— 刚建立时可能十几分钟到一小时解析不到，且隧道一关记录立即撤销。长期使用请换固定域名，见 [docs/public-host.md](docs/public-host.md)。
+- **额度只覆盖 Codex** —— CodeBuddy 的 ACP 协议不下发额度，本仓库也未实现其 `/v2/billing/*` 端点。
 - **不提供后台推送**。App 在前台每 2 秒同步；退到后台不会收到提醒。
 - **CodeBuddy IDE 的历史对话正文拿不到** —— 它存在云端，本地只有指针。IDE 项目会作为项目分组出现，但正文仅覆盖 CodeBuddy CLI 会话。
 - **仅支持 Android**。
@@ -127,6 +133,7 @@ flutter test --update-goldens
 | [docs/agentlink-device-validation.md](docs/agentlink-device-validation.md) | 1.3.0 真机验收清单 |
 | [docs/agentlink-lan-validation.md](docs/agentlink-lan-validation.md) | 局域网模式验证 |
 | [docs/lan-host.md](docs/lan-host.md) | 电脑端局域网 Host 说明 |
+| [docs/public-host.md](docs/public-host.md) | 公网连接：Cloudflare 隧道、固定域名与已知的 DNS 同步问题 |
 
 ## 许可
 
