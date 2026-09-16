@@ -42,7 +42,7 @@ export {
     WorkGraphValidationError
 } from './workGraph'
 
-const SCHEMA_VERSION: number = 26
+const SCHEMA_VERSION: number = 27
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -348,6 +348,7 @@ export class Store {
             23: () => this.migrateFromV23ToV24(),
             24: () => this.migrateFromV24ToV25(),
             25: () => this.migrateFromV25ToV26(),
+            26: () => this.migrateFromV26ToV27(),
         })
 
         if (currentVersion === 0) {
@@ -527,6 +528,7 @@ export class Store {
                 agent TEXT NOT NULL,
                 model TEXT,
                 kind TEXT NOT NULL CHECK (kind IN ('delta', 'cumulative')),
+                scope TEXT NOT NULL DEFAULT 'managed',
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
                 cache_read_tokens INTEGER NOT NULL DEFAULT 0,
@@ -997,6 +999,24 @@ export class Store {
     }
 
     /**
+     * 用量事件记录来源：`managed`（本 Host 管理）或 `imported`（导入的历史）。
+     *
+     * 导入会话的累计值包含 HAPI 之前跑过的部分，和本机增量混算会让「本机消耗」
+     * 失去意义。此前靠解析阶段直接丢弃来规避，代价是导入的历史完全不可见；存下
+     * 来源后汇总阶段就能分开展示，而不是二选一。旧行默认 `managed`，下次扫描
+     * 会被覆盖成真实值。
+     */
+    private migrateFromV26ToV27(): void {
+        // 必须有列存在性检查：`createSchema` 建的新库本就带 `scope`，测试与
+        // 「先建库再回填版本号」的路径会让本步在已有列上重跑，直接 ALTER 会以
+        // `duplicate column name` 失败并让整个 Store 起不来。
+        const columns = this.getUsageEventColumnNames()
+        if (columns.size > 0 && !columns.has('scope')) {
+            this.db.exec("ALTER TABLE usage_events ADD COLUMN scope TEXT NOT NULL DEFAULT 'managed'")
+        }
+    }
+
+    /**
      * A2A Layer 1 / P1 (#1374) + P3 substrate: hub work-graph ledger tables.
      * Namespace + principal_json required on every events row.
      * Bumped as v22→v23 because upstream main already ships schema 22.
@@ -1061,6 +1081,11 @@ export class Store {
 
     private getMachineColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(machines)').all() as Array<{ name: string }>
+        return new Set(rows.map((row) => row.name))
+    }
+
+    private getUsageEventColumnNames(): Set<string> {
+        const rows = this.db.prepare('PRAGMA table_info(usage_events)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
     }
 

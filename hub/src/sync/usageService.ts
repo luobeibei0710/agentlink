@@ -1,6 +1,6 @@
 import type { UsageSummaryBucket, UsageSummaryResponse } from '@hapi/protocol/apiTypes'
 import type { StoredMessage, StoredSession } from '../store'
-import type { UsageEvent } from '../store/usage'
+import type { UsageEvent, UsageEventScope } from '../store/usage'
 import type { Store } from '../store'
 
 type RecordValue = Record<string, unknown>
@@ -87,6 +87,7 @@ function parseUsageEvent(session: StoredSession, message: StoredMessage): UsageE
             agent: 'claude',
             model,
             kind: 'delta',
+            scope: 'managed',
             inputTokens: normalizeInputTokens(data, inputTokens, cacheReadTokens, cacheCreationTokens, 'excludes-cache'),
             outputTokens,
             cacheReadTokens,
@@ -102,7 +103,10 @@ function parseUsageEvent(session: StoredSession, message: StoredMessage): UsageE
     // ACP-compatible backends wrap per-request usage in `total`, so only Codex
     // should be diffed as a cumulative stream.
     if (data.type === 'token_count' || data.type === 'usage') {
-        if (data.hapiUsageScope === 'imported-history') return null
+        // 事件一律采集，不再在解析阶段丢弃导入的历史。原因是用量页要在「本机消耗」
+        // 之外单独展示「历史累计」，而历史会话的累计值包含 HAPI 之前的部分，和
+        // 本机增量混算会失去意义 —— 只有在汇总阶段才掌握足够信息去分流。
+        // 分流依据是会话的 metadata（见 summarizeUsage），不依赖这里。
         const info = asRecord(data.info) ?? data
         const agent = sessionAgent(session)
         const explicitThreadId = typeof data.threadId === 'string'
@@ -110,12 +114,9 @@ function parseUsageEvent(session: StoredSession, message: StoredMessage): UsageE
             : typeof data.thread_id === 'string'
                 ? data.thread_id
                 : null
-        const metadata = asRecord(session.metadata)
-        const hasImportedCodexHistory = typeof metadata?.codexSourceSessionId === 'string'
-            || metadata?.lifecycleState === 'imported'
-        if (agent === 'codex' && explicitThreadId === null && hasImportedCodexHistory) {
-            return null
-        }
+        // 导入的 Codex 历史不带显式 threadId，此前会在这里被整段丢弃。现在统一
+        // 退回 session.id 作为流标识（见下面的 threadId），每个导入会话各自成流，
+        // 累计值仍能正确求差 —— 它们是否计入「本机消耗」由汇总阶段按会话判定。
         const cumulativeTotal = agent === 'codex'
             ? asRecord(info.total)
                 ?? asRecord(info.total_token_usage)
@@ -133,6 +134,16 @@ function parseUsageEvent(session: StoredSession, message: StoredMessage): UsageE
         const cacheCreationTokens = firstCount(total, 'cacheWriteInputTokens', 'cache_write_input_tokens', 'cacheCreationTokens', 'cache_creation_input_tokens')
         if (rawInputTokens + outputTokens + cacheReadTokens + cacheCreationTokens <= 0) return null
         const threadId = explicitThreadId ?? session.id
+        // 来源判定：CLI 明确标记的重放历史；以及导入会话里没有显式 threadId 的消息 ——
+        // 那是更早版本留下的数据，没有标记可依，只能靠会话身份兜底（这正是此前那
+        // 两处排除的逻辑，现在只是记录下来而不是丢掉）。
+        const metadata = asRecord(session.metadata)
+        const importedSession = typeof metadata?.codexSourceSessionId === 'string'
+            || metadata?.lifecycleState === 'imported'
+        const usageScope: UsageEventScope = data.hapiUsageScope === 'imported-history'
+            || (importedSession && explicitThreadId === null)
+            ? 'imported'
+            : 'managed'
         const scope = typeof data.scopeRole === 'string'
             ? data.scopeRole
             : typeof data.scope_role === 'string'
@@ -200,6 +211,7 @@ function parseUsageEvent(session: StoredSession, message: StoredMessage): UsageE
             agent,
             model,
             kind: isCumulative ? 'cumulative' : 'delta',
+            scope: usageScope,
             inputTokens,
             outputTokens,
             cacheReadTokens,
@@ -348,6 +360,16 @@ export function getUsageSummary(
     const events = store.usage.getEvents(Array.from(sessionIds))
     const isInRange = (event: UsageEvent) => (from === null || event.createdAt >= from) && event.createdAt <= now
 
+    // 来源已在解析阶段判定（见 parseUsageEvent 的 scope），这里按 scope 分流。
+    // 历史会话按会话各取最后一条快照：累计值的基线不可知，求差会少算，直接取
+    // 最后一条才是这个会话的总量。
+    const importedBySession = new Map<string, UsageEvent>()
+    const importedTotals = emptyTotals()
+    const importedByAgent = new Map<string, Totals>()
+    const importedByModel = new Map<string, Totals>()
+    const importedSessions = new Set<string>()
+    const importedDaily = new Map<string, Totals>()
+
     const totals = emptyTotals()
     const daily = new Map<string, Totals>()
     const byAgent = new Map<string, Totals>()
@@ -358,6 +380,14 @@ export function getUsageSummary(
     const dayFormatter = createDayFormatter(timeZone)
 
     for (const event of events) {
+        // 导入的历史不参与本机消耗的增量计算，只留最后一条快照供历史汇总使用。
+        if (event.scope === 'imported') {
+            const existing = importedBySession.get(event.sessionId)
+            if (!existing || event.sourceSeq > existing.sourceSeq) {
+                importedBySession.set(event.sessionId, event)
+            }
+            continue
+        }
         let inputTokens = event.inputTokens
         let outputTokens = event.outputTokens
         let cacheReadTokens = event.cacheReadTokens
@@ -436,9 +466,42 @@ export function getUsageSummary(
         .map(([key, value]) => toBucket(key, value))
         .sort((a, b) => b.totalTokens - a.totalTokens)
 
+    // 历史会话：每个会话一条快照，直接计入总量。这里刻意不做增量求差 —— 累计值
+    // 的起点在 HAPI 之外，差值会少算掉那一段。
+    for (const event of importedBySession.values()) {
+        if (!isInRange(event)) continue
+        const inputTokens = event.inputTokens
+        const outputTokens = event.outputTokens
+        const cacheReadTokens = event.cacheReadTokens
+        const cacheCreationTokens = event.cacheCreationTokens
+        if (inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens <= 0) continue
+        importedSessions.add(event.sessionId)
+        addTotals(importedTotals, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens)
+
+        const agentBucket = importedByAgent.get(event.agent) ?? emptyTotals()
+        addTotals(agentBucket, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens)
+        importedByAgent.set(event.agent, agentBucket)
+
+        const modelKey = event.model ?? 'unknown'
+        const modelBucket = importedByModel.get(modelKey) ?? emptyTotals()
+        addTotals(modelBucket, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens)
+        importedByModel.set(modelKey, modelBucket)
+
+        const eventDayKey = dayKey(event.createdAt, dayFormatter)
+        const dayBucket = importedDaily.get(eventDayKey) ?? emptyTotals()
+        addTotals(dayBucket, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens)
+        importedDaily.set(eventDayKey, dayBucket)
+    }
+
     return {
         range: { from, to: now },
         totals: { ...totals, sessions: sessionsWithUsage.size },
+        importedTotals: { ...importedTotals, sessions: importedSessions.size },
+        importedDaily: Array.from(importedDaily.entries())
+            .map(([key, value]) => toBucket(key, value))
+            .sort((a, b) => a.key.localeCompare(b.key)),
+        importedByAgent: sortBuckets(importedByAgent),
+        importedByModel: sortBuckets(importedByModel),
         daily: Array.from(daily.entries())
             .map(([key, value]) => toBucket(key, value))
             .sort((a, b) => a.key.localeCompare(b.key)),

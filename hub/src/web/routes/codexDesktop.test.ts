@@ -77,6 +77,39 @@ function createMirroredTranscript(codexHome: string, sessionId: string): void {
     writeFileSync(transcriptPath, transcriptLines.map((line) => JSON.stringify(line)).join('\n') + '\n', 'utf-8')
 }
 
+function createRateLimitTranscript(codexHome: string, sessionId: string): void {
+    const sessionDir = join(codexHome, 'sessions', '2026', '06', '04')
+    mkdirSync(sessionDir, { recursive: true })
+    const transcriptPath = join(sessionDir, 'rollout-' + sessionId + '.jsonl')
+    const transcriptLines = [
+        {
+            type: 'session_meta',
+            payload: {
+                id: sessionId,
+                cwd: 'C:/work/project',
+                originator: 'codex_cli_rs',
+                cli_version: '0.0.0-test'
+            }
+        },
+        // Codex 只在额度变化时单独推一条 token_count：`info` 为 null，只有额度。
+        {
+            type: 'event_msg',
+            payload: {
+                type: 'token_count',
+                info: null,
+                rate_limits: {
+                    limit_id: 'premium',
+                    primary: { used_percent: 99, window_minutes: 10080, resets_at: 1789819456 },
+                    secondary: null,
+                    credits: { has_credits: false, unlimited: false, balance: '0' },
+                    plan_type: 'pro'
+                }
+            }
+        }
+    ]
+    writeFileSync(transcriptPath, transcriptLines.map((line) => JSON.stringify(line)).join('\n') + '\n', 'utf-8')
+}
+
 function createMirroredAgentMessageTranscript(codexHome: string, sessionId: string): void {
     const sessionDir = join(codexHome, 'sessions', '2026', '06', '04')
     mkdirSync(sessionDir, { recursive: true })
@@ -547,6 +580,55 @@ describe('Codex Desktop import routes', () => {
                     data: {
                         type: 'message',
                         message: 'duplicated assistant message',
+                        id: expect.any(String)
+                    }
+                },
+                meta: {
+                    sentFrom: 'cli'
+                }
+            })
+        } finally {
+            store.close()
+            rmSync(codexHome, { recursive: true, force: true })
+        }
+    })
+
+    it('keeps a rate-limit-only token_count when importing a transcript', async () => {
+        const codexHome = mkdtempSync(join(tmpdir(), 'hapi-codex-home-rate-limit-test-'))
+        const store = new Store(':memory:')
+        const codexSessionId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+        process.env.CODEX_HOME = codexHome
+
+        try {
+            createRateLimitTranscript(codexHome, codexSessionId)
+
+            const result = await importSelectedCodexSessions({
+                codexSessionIds: [codexSessionId],
+                store,
+                namespace: 'default',
+                getSyncEngine: () => null
+            })
+
+            expect(result.success).toBe(true)
+            const session = store.sessions.getSessionsByNamespace('default')[0]
+            expect(session).toBeDefined()
+            const messages = store.messages.getAllMessages(session.id)
+            // 额度单独成条（`info` 为 null）时此前会被整条丢掉，导入的历史因此
+            // 完全没有额度信息 —— 手机端也就永远看不到额度。
+            expect(messages).toHaveLength(1)
+            expect(messages[0].content).toEqual({
+                role: 'agent',
+                content: {
+                    type: AGENT_MESSAGE_PAYLOAD_TYPE,
+                    data: {
+                        type: 'token_count',
+                        rateLimits: {
+                            limit_id: 'premium',
+                            primary: { used_percent: 99, window_minutes: 10080, resets_at: 1789819456 },
+                            secondary: null,
+                            credits: { has_credits: false, unlimited: false, balance: '0' },
+                            plan_type: 'pro'
+                        },
                         id: expect.any(String)
                     }
                 },

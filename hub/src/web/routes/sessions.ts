@@ -1392,6 +1392,36 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
     })
 
+    app.get('/sessions/:id/codebuddy-models', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const flavor = sessionResult.session.metadata?.flavor ?? 'claude'
+        if (flavor !== 'codebuddy') {
+            return c.json({
+                success: false,
+                error: 'CodeBuddy models are only available for CodeBuddy sessions'
+            }, 400)
+        }
+
+        try {
+            const result = await engine.listCodebuddyModelsForSession(sessionResult.sessionId)
+            return c.json(result)
+        } catch (error) {
+            return c.json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to list CodeBuddy models'
+            }, 500)
+        }
+    })
+
     app.get('/sessions/:id/opencode-models', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) {

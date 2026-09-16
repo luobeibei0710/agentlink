@@ -2,6 +2,9 @@ import type { Database } from 'bun:sqlite'
 
 export type UsageEventKind = 'delta' | 'cumulative'
 
+/** 用量来源：本 Host 管理产生的，还是从外部历史导入的。 */
+export type UsageEventScope = 'managed' | 'imported'
+
 export type UsageEvent = {
     sessionId: string
     sourceKey: string
@@ -10,6 +13,7 @@ export type UsageEvent = {
     agent: string
     model: string | null
     kind: UsageEventKind
+    scope: UsageEventScope
     inputTokens: number
     outputTokens: number
     cacheReadTokens: number
@@ -33,6 +37,7 @@ type UsageEventRow = {
     agent: string
     model: string | null
     kind: UsageEventKind
+    scope: UsageEventScope
     input_tokens: number
     output_tokens: number
     cache_read_tokens: number
@@ -52,6 +57,7 @@ function toUsageEvent(row: UsageEventRow): UsageEvent {
         agent: row.agent,
         model: row.model,
         kind: row.kind,
+        scope: row.scope,
         inputTokens: row.input_tokens,
         outputTokens: row.output_tokens,
         cacheReadTokens: row.cache_read_tokens,
@@ -86,6 +92,7 @@ export function recordUsageScan(
                     agent,
                     model,
                     kind,
+                    scope,
                     input_tokens,
                     output_tokens,
                     cache_read_tokens,
@@ -102,6 +109,7 @@ export function recordUsageScan(
                     @agent,
                     @model,
                     @kind,
+                    @scope,
                     @input_tokens,
                     @output_tokens,
                     @cache_read_tokens,
@@ -118,6 +126,7 @@ export function recordUsageScan(
                     agent = excluded.agent,
                     model = excluded.model,
                     kind = excluded.kind,
+                    scope = excluded.scope,
                     input_tokens = excluded.input_tokens,
                     output_tokens = excluded.output_tokens,
                     cache_read_tokens = excluded.cache_read_tokens,
@@ -145,6 +154,7 @@ export function recordUsageScan(
                     agent: event.agent,
                     model: event.model,
                     kind: event.kind,
+                    scope: event.scope,
                     input_tokens: event.inputTokens,
                     output_tokens: event.outputTokens,
                     cache_read_tokens: event.cacheReadTokens,
@@ -188,6 +198,7 @@ export function getUsageEvents(db: Database, sessionIds: string[]): UsageEvent[]
             agent,
             model,
             kind,
+            scope,
             input_tokens,
             output_tokens,
             cache_read_tokens,
@@ -233,6 +244,7 @@ export function transferUsageSession(db: Database, fromSessionId: string, toSess
                 agent,
                 model,
                 kind,
+                scope,
                 input_tokens,
                 output_tokens,
                 cache_read_tokens,
@@ -250,6 +262,7 @@ export function transferUsageSession(db: Database, fromSessionId: string, toSess
                 agent,
                 model,
                 kind,
+                scope,
                 input_tokens,
                 output_tokens,
                 cache_read_tokens,

@@ -670,7 +670,18 @@ function convertCodexRecordToImportedMessage(record: Record<string, unknown>): C
 
         if (eventType === 'token_count') {
             const info = asRecord(payload.info)
-            return info ? buildImportedAgentMessage({ type: 'token_count', info, id: randomUUID() }) : null
+            const rateLimits = asRecord(payload.rate_limits ?? payload.rateLimits)
+            // 只带额度的 token_count 也要留下：Codex 用它单独推送套餐用量（此时
+            // `info` 为 null），丢掉就等于导入的历史完全没有额度信息。
+            if (!info && !rateLimits) {
+                return null
+            }
+            return buildImportedAgentMessage({
+                type: 'token_count',
+                ...(info ? { info } : {}),
+                ...(rateLimits ? { rateLimits } : {}),
+                id: randomUUID()
+            })
         }
 
         return null

@@ -82,6 +82,20 @@ export type RpcStatFilesResponse = StatFilesResponse
 export type RpcPathExistsResponse = PathExistsResponse
 export type RpcCodexModel = CodexModelSummary
 export type RpcListCodexModelsResponse = CodexModelsResponse
+
+/** 一个可选的 CodeBuddy 模型。`description` 是服务端给的计费标注。 */
+export type RpcCodebuddyModel = {
+    modelId: string
+    name?: string
+    description?: string
+}
+
+export type RpcListCodebuddyModelsResponse = {
+    success: boolean
+    models?: RpcCodebuddyModel[]
+    currentModelId?: string | null
+    error?: string
+}
 export type RpcListCodexSessionsResponse = ListCodexSessionsRpcResponse
 export type RpcListPiSessionsResponse = ListPiSessionsRpcResponse
 export type RpcListCodeBuddySessionsResponse = ListCodeBuddySessionsRpcResponse
@@ -396,6 +410,15 @@ export class RpcGateway {
             {},
             MODEL_LIST_RPC_TIMEOUT_MS
         ) as RpcListCodexModelsResponse
+    }
+
+    async listCodebuddyModelsForSession(sessionId: string): Promise<RpcListCodebuddyModelsResponse> {
+        return await this.sessionRpc(
+            sessionId,
+            RPC_METHODS.ListCodebuddyModels,
+            {},
+            MODEL_LIST_RPC_TIMEOUT_MS
+        ) as RpcListCodebuddyModelsResponse
     }
 
     async listCodexSessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[]): Promise<RpcListCodexSessionsResponse> {
