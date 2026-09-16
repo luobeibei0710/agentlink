@@ -991,21 +991,33 @@ export type UsageSummaryBucket = {
     requests: number
 }
 
+export type UsageSummaryTotals = {
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheCreationTokens: number
+    totalTokens: number
+    uncachedTokens: number
+    requests: number
+    sessions: number
+}
+
 export type UsageSummaryResponse = {
     range: {
         from: number | null
         to: number | null
     }
-    totals: {
-        inputTokens: number
-        outputTokens: number
-        cacheReadTokens: number
-        cacheCreationTokens: number
-        totalTokens: number
-        uncachedTokens: number
-        requests: number
-        sessions: number
-    }
+    totals: UsageSummaryTotals
+    /**
+     * 导入的历史会话用量，按会话取累计快照，不参与增量求差。
+     *
+     * 与本机消耗是两种口径，不能相加：历史会话的累计值包含 HAPI 之前跑过的部分，
+     * 混算会让「本机消耗」失去意义。界面应当分开展示。
+     */
+    importedTotals: UsageSummaryTotals
+    importedDaily: Array<UsageSummaryBucket & { key: string }>
+    importedByAgent: UsageSummaryBucket[]
+    importedByModel: UsageSummaryBucket[]
     daily: Array<UsageSummaryBucket & { key: string }>
     byAgent: UsageSummaryBucket[]
     byModel: UsageSummaryBucket[]

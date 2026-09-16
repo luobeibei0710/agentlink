@@ -36,6 +36,8 @@ export const RPC_METHODS = {
     ListPiModels: 'listPiModels',
     ListPiSessions: 'listPiSessions',
     ListCodeBuddySessions: 'listCodeBuddySessions',
+    /** 列出某个 CodeBuddy 会话可用的模型（取自该会话的 ACP 配置选项）。 */
+    ListCodebuddyModels: 'listCodebuddyModels',
     ListOpencodeModels: 'listOpencodeModels',
     ListOpencodeModelVariants: 'listOpencodeModelVariants',
     ListOpencodeModelsForCwd: 'listOpencodeModelsForCwd',

@@ -12,7 +12,9 @@ export type Capability = typeof Capabilities[keyof typeof Capabilities]
 const FLAVOR_CAPS: Record<AgentFlavor, ReadonlySet<Capability>> = {
     agy: new Set([Capabilities.ModelChange]),
     claude: new Set([Capabilities.ModelChange, Capabilities.Effort]),
-    codebuddy: new Set(),
+    // CodeBuddy 通过 ACP 的 config_option_update 下发 category=model 的选项，
+    // 也支持运行中用 session/set_config_option 切换（实测确认）。
+    codebuddy: new Set([Capabilities.ModelChange]),
     gemini: new Set([Capabilities.ModelChange]),
     kimi: new Set([Capabilities.ModelChange]),
     copilot: new Set([Capabilities.ModelChange]),

@@ -33,8 +33,10 @@ describe('hasCapability', () => {
         expect(hasCapability('dsh', Capabilities.Effort)).toBe(false)
     })
 
-    test('CodeBuddy does not advertise unimplemented runtime model or effort switching', () => {
-        expect(hasCapability('codebuddy', Capabilities.ModelChange)).toBe(false)
+    test('CodeBuddy supports runtime model switching but not effort', () => {
+        // CodeBuddy 通过 ACP 的 config_option_update 下发 category=model 的选项，
+        // 也能用 session/set_config_option 在运行中切换（实测确认）；effort 尚未下发。
+        expect(hasCapability('codebuddy', Capabilities.ModelChange)).toBe(true)
         expect(hasCapability('codebuddy', Capabilities.Effort)).toBe(false)
     })
 
