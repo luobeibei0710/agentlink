@@ -149,18 +149,22 @@ function formatTokenCountEvent(event: AgentEvent): EventPresentation {
     const total = asRecord(info?.total) ?? info
     if (!total) return { icon: '◷', text: 'Context updated' }
 
-    const inputTokens = asNumber(total.inputTokens ?? total.input_tokens)
     const outputTokens = asNumber(total.outputTokens ?? total.output_tokens)
     const cachedTokens = asNumber(total.cachedInputTokens ?? total.cacheReadInputTokens ?? total.cache_read_input_tokens)
     const reasoningTokens = asNumber(total.reasoningOutputTokens ?? total.reasoning_output_tokens)
     const contextWindow = asNumber(info?.modelContextWindow ?? info?.model_context_window)
+    // Context 取本轮请求的输入量（`last`）。累计输入（`total`）是会话至今所有请求
+    // 的总和，除以窗口会得出远超 100% 的数字（实测 69.8M / 258.4k → 27027%）。
+    // 早期载荷没有 `last` 时退回累计值，行为与改动前一致。
+    const last = asRecord(info?.last)
+    const contextTokens = asNumber(last?.inputTokens ?? last?.input_tokens) ?? asNumber(total.inputTokens ?? total.input_tokens)
 
     const parts: string[] = []
-    if (inputTokens !== null && contextWindow !== null) {
-        const pct = Math.round((inputTokens / contextWindow) * 100)
-        parts.push(`Context ${formatTokenCount(inputTokens)} / ${formatTokenCount(contextWindow)} (${pct}%)`)
-    } else if (inputTokens !== null) {
-        parts.push(`Context ${formatTokenCount(inputTokens)}`)
+    if (contextTokens !== null && contextWindow !== null) {
+        const pct = Math.round((contextTokens / contextWindow) * 100)
+        parts.push(`Context ${formatTokenCount(contextTokens)} / ${formatTokenCount(contextWindow)} (${pct}%)`)
+    } else if (contextTokens !== null) {
+        parts.push(`Context ${formatTokenCount(contextTokens)}`)
     } else {
         parts.push('Context updated')
     }
