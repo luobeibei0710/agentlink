@@ -69,10 +69,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // 命令详情默认收起，快照记录的是折叠态 —— 这是用户实际看到的默认形态。
     await expectLater(
       find.byType(ListView),
       matchesGoldenFile('goldens/approval_cards.png'),
     );
+
+    // 再断言展开后仍能读到具体操作：折叠不能把渲染问题一起藏起来。
+    await tester.ensureVisible(find.text('查看命令详情').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('查看命令详情').first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('rm -rf node_modules'), findsOneWidget);
     model.dispose();
   });
 }

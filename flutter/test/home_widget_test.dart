@@ -208,6 +208,15 @@ void main() {
         ];
       model.submittedRequests.add('req');
       await tester.pumpWidget(AgentLink(model: model, receiveLinks: false));
+      // 审批改成了弹出确认层。有请求时会自动弹出；若这次没赶上自动弹出，
+      // 就点提示条手动打开 —— 两种路径都应当能进到同一个确认层。
+      if (find.text('查看命令详情').evaluate().isEmpty) {
+        await tester.tap(find.textContaining('项操作等待确认'));
+        await tester.pumpAndSettle();
+      }
+      // 弹出层里命令详情默认收起，展开后才能核对具体操作。
+      await tester.tap(find.text('查看命令详情').first);
+      await tester.pumpAndSettle();
       expect(find.textContaining('/work/mobile/file.txt'), findsOneWidget);
       final button = tester.widget<FilledButton>(
         find.widgetWithText(FilledButton, '允许一次'),

@@ -160,6 +160,32 @@ class FakeApi extends HapiApi {
     permissionModeCalls.add((id, mode));
   }
 
+  final modelCalls = <(String, String)>[];
+  @override
+  Future<void> setModel(String id, String model) async {
+    modelCalls.add((id, model));
+  }
+
+  /// 电脑端返回的用量总览。
+  UsageSummary? usageRows;
+  /// 记录拉取用量时用的范围与时区，用于验证参数传递。
+  (String, String)? usageArgs;
+  @override
+  Future<UsageSummary> usageSummary(String range, String timeZone) async {
+    usageArgs = (range, timeZone);
+    return usageRows ?? UsageSummary.fromJson(const {});
+  }
+
+  /// 电脑端返回的模型列表；null 表示该会话取不到列表。
+  List<ModelOption>? modelRows;
+  /// 记录拉取列表时用的 flavor，用于验证端点选择。
+  String? modelsFlavor;
+  @override
+  Future<List<ModelOption>?> models(String id, String flavor) async {
+    modelsFlavor = flavor;
+    return modelRows;
+  }
+
   @override
   Future<String> resume(String id) {
     resumeCalls++;
@@ -610,6 +636,185 @@ void main() {
     await model.setPermissionMode('yolo');
 
     expect(api.permissionModeCalls, isEmpty);
+    model.dispose();
+  });
+
+  test('model change targets the open session and is remembered', () async {
+    final api = FakeApi();
+    final model = AppModel(apiFactory: (_, _) => api, persistState: false);
+    await model.pair('hub.example', 'token');
+    await model.openSession('a');
+
+    expect(model.modelFor('a'), isNull);
+
+    await model.setModel('deepseek-v4-pro');
+    expect(api.modelCalls, [('a', 'deepseek-v4-pro')]);
+    expect(model.modelFor('a'), 'deepseek-v4-pro');
+
+    // 切换会话不应把上一个会话的模型带过去。
+    await model.openSession('b');
+    expect(model.modelFor('b'), isNull);
+    model.dispose();
+  });
+
+  test('the model reported by the hub wins over the local record', () async {
+    final api = FakeApi()
+      ..sessionRows = const [
+        SessionSummary(
+          id: 'a',
+          title: 'Codex',
+          cwd: '/one',
+          flavor: 'codex',
+          active: true,
+          updatedAt: 1,
+          model: 'gpt-5-codex',
+        ),
+      ];
+    final model = AppModel(apiFactory: (_, _) => api, persistState: false);
+    await model.pair('hub.example', 'token');
+
+    // 电脑端上报的值优先：它才反映真实模型，包括在电脑上改过的。
+    expect(model.modelFor('a'), 'gpt-5-codex');
+    model.dispose();
+  });
+
+  test('available models are fetched with the session flavor', () async {
+    final api = FakeApi()
+      ..sessionRows = const [
+        SessionSummary(
+          id: 'a',
+          title: 'CodeBuddy',
+          cwd: '/one',
+          flavor: 'codebuddy',
+          active: true,
+          updatedAt: 1,
+        ),
+      ]
+      ..modelRows = const [
+        ModelOption('hy4-preview', 'Hy4 preview', note: 'x0.29 credits'),
+        ModelOption('hy3', 'Hy3'),
+      ];
+    final model = AppModel(apiFactory: (_, _) => api, persistState: false);
+    await model.pair('hub.example', 'token');
+
+    final options = await model.availableModels('a');
+    expect(api.modelsFlavor, 'codebuddy');
+    expect(options, hasLength(2));
+    expect(options!.first.label, 'Hy4 preview');
+    expect(options.first.note, 'x0.29 credits');
+    model.dispose();
+  });
+
+  test('a session without models reports null instead of an empty list', () async {
+    final api = FakeApi()..modelRows = null;
+    final model = AppModel(apiFactory: (_, _) => api, persistState: false);
+    await model.pair('hub.example', 'token');
+
+    // null 表示「这个会话不支持换模型」，界面据此不显示入口；
+    // 空列表会被误解成「有入口但没有可选模型」。
+    expect(await model.availableModels('a'), isNull);
+    model.dispose();
+  });
+
+  test('loads the usage summary and passes the device time zone', () async {
+    final api = FakeApi()
+      ..usageRows = UsageSummary.fromJson({
+        'totals': {
+          'inputTokens': 1000,
+          'outputTokens': 200,
+          'totalTokens': 1200,
+          'requests': 3,
+          'sessions': 2,
+        },
+        'byAgent': [
+          {'key': 'codebuddy', 'totalTokens': 1200, 'requests': 3},
+        ],
+      });
+    final model = AppModel(apiFactory: (_, _) => api, persistState: false);
+    await model.pair('hub.example', 'token');
+
+    await model.loadUsage('30d');
+
+    expect(api.usageArgs?.$1, '30d');
+    // 时区必须能被电脑端的 Intl 接受，否则接口直接 400。
+    expect(api.usageArgs?.$2, AppModel.deviceTimeZone());
+    expect(model.usage?.managed.totals.totalTokens, 1200);
+    expect(model.usage?.managed.sessions, 2);
+    expect(model.usage?.managed.byAgent.single.key, 'codebuddy');
+    model.dispose();
+  });
+
+  test('device time zone is a name the hub can parse', () {
+    // Dart 拿不到 IANA 名，只能验证产出形态：UTC 或固定偏移的 Etc/GMT±N。
+    // 半小时时区（如印度 +5:30）不在 Etc/GMT 的表达范围内，会退回 UTC。
+    expect(
+      AppModel.deviceTimeZone(),
+      anyOf('UTC', matches(r'^Etc/GMT[+-]\d{1,2}$')),
+    );
+  });
+
+  test('sending to an offline session resumes it before delivering', () async {
+    // 导入的历史会话在电脑上没有进程（active=false）。
+    final api = FakeApi()
+      ..sessionRows = const [
+        SessionSummary(
+          id: 'a',
+          title: 'Codex',
+          cwd: '/one',
+          flavor: 'codex',
+          active: false,
+          updatedAt: 1,
+        ),
+      ];
+    final model = AppModel(apiFactory: (_, _) => api, persistState: false);
+    await model.pair('hub.example', 'token');
+    await model.openSession('a');
+
+    await model.sendOrResume('继续这个任务');
+
+    // 先把会话恢复起来，再把消息投递给恢复后的会话（电脑端会新建一个活跃会话）。
+    expect(api.resumeCalls, 1);
+    expect(api.sent.single.$1, 'a-resumed');
+    expect(api.sent.single.$2, '继续这个任务');
+    model.dispose();
+  });
+
+  test('sending to an online session skips the resume step', () async {
+    final api = FakeApi();
+    final model = AppModel(apiFactory: (_, _) => api, persistState: false);
+    await model.pair('hub.example', 'token');
+    await model.openSession('a');
+
+    await model.sendOrResume('你好');
+
+    expect(api.resumeCalls, 0);
+    expect(api.sent.single.$1, 'a');
+    expect(api.sent.single.$2, '你好');
+    model.dispose();
+  });
+
+  test('a failed resume does not deliver the message', () async {
+    final api = FakeApi()
+      ..sessionRows = const [
+        SessionSummary(
+          id: 'a',
+          title: 'Codex',
+          cwd: '/one',
+          flavor: 'codex',
+          active: false,
+          updatedAt: 1,
+        ),
+      ]
+      ..resumeHandler = (_) => Future.error(HubException('恢复失败'));
+    final model = AppModel(apiFactory: (_, _) => api, persistState: false);
+    await model.pair('hub.example', 'token');
+    await model.openSession('a');
+
+    await model.sendOrResume('不该发出去');
+
+    // 恢复不成功时不能继续投递：消息会落到已归档的会话上。
+    expect(api.resumeCalls, 1);
+    expect(api.sent, isEmpty);
     model.dispose();
   });
 

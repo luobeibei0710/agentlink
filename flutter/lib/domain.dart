@@ -19,6 +19,7 @@ class SessionSummary {
     this.pending = 0,
     this.thinking = false,
     this.permissionMode,
+    this.model,
   });
   final String id, title, cwd, flavor;
   final bool active;
@@ -27,6 +28,9 @@ class SessionSummary {
 
   /// 电脑端上报的当前权限档位；为空表示该 Agent 不上报或电脑端版本较旧。
   final String? permissionMode;
+
+  /// 电脑端上报的当前模型 id；为空表示该 Agent 不上报或尚未选择。
+  final String? model;
 
   factory SessionSummary.fromJson(Map<String, dynamic> j) {
     final m = _map(j['metadata']);
@@ -45,6 +49,221 @@ class SessionSummary {
       updatedAt: _int(j['updatedAt']) ?? 0,
       pending: _int(j['pendingRequestsCount']) ?? 0,
       permissionMode: _string(j['permissionMode']),
+      model: _string(j['model']),
+    );
+  }
+}
+
+/// 一个可选的模型。
+///
+/// Codex 与 CodeBuddy 的模型来源不同（前者走 listCodexModels RPC，后者取自会话的
+/// ACP 配置选项），但对用户是同一个问题：这个会话能用哪些模型。两端都归一成这个
+/// 类型。
+class ModelOption {
+  const ModelOption(this.id, this.label, {this.note});
+
+  /// 提交给电脑端的模型 id。
+  final String id;
+
+  /// 展示名；服务端没给名字时退回 id。
+  final String label;
+
+  /// 服务端附带的补充说明。CodeBuddy 用它标注计费倍率（如 `x0.29 credits`）。
+  final String? note;
+}
+
+/// 一段用量的合计。对应电脑端的 `UsageSummaryBucket`。
+///
+/// 电脑端把 token 分成四类，并额外给出两个派生值：
+/// `totalTokens`（输入+输出）与 `uncachedTokens`（真正未命中缓存的输入+输出，
+/// 缓存收益看这个差值）。
+class UsageBucket {
+  const UsageBucket({
+    required this.key,
+    required this.inputTokens,
+    required this.outputTokens,
+    required this.cacheReadTokens,
+    required this.cacheCreationTokens,
+    required this.totalTokens,
+    required this.uncachedTokens,
+    required this.requests,
+  });
+
+  /// 分组键：日期、Agent 名或模型 id；总计行的键为空。
+  final String key;
+  final int inputTokens;
+  final int outputTokens;
+  final int cacheReadTokens;
+  final int cacheCreationTokens;
+  final int totalTokens;
+  final int uncachedTokens;
+  final int requests;
+
+  factory UsageBucket.fromJson(Map<String, dynamic> j) => UsageBucket(
+    key: '${j['key'] ?? ''}',
+    inputTokens: _int(j['inputTokens']) ?? 0,
+    outputTokens: _int(j['outputTokens']) ?? 0,
+    cacheReadTokens: _int(j['cacheReadTokens']) ?? 0,
+    cacheCreationTokens: _int(j['cacheCreationTokens']) ?? 0,
+    totalTokens: _int(j['totalTokens']) ?? 0,
+    uncachedTokens: _int(j['uncachedTokens']) ?? 0,
+    requests: _int(j['requests']) ?? 0,
+  );
+}
+
+/// 一组用量：合计，以及按天 / 按 Agent / 按模型的分组。
+class UsageGroup {
+  const UsageGroup({
+    required this.totals,
+    required this.sessions,
+    required this.daily,
+    required this.byAgent,
+    required this.byModel,
+  });
+
+  /// 组内合计；`sessions` 单独给出，因为它不属于 `UsageBucket`。
+  final UsageBucket totals;
+  final int sessions;
+
+  /// 按天分组的用量，按键升序（即时间正序）。
+  final List<UsageBucket> daily;
+
+  /// 按 Agent 分组的用量，按 token 降序。
+  final List<UsageBucket> byAgent;
+
+  /// 按模型分组的用量，按 token 降序。
+  final List<UsageBucket> byModel;
+
+  bool get isEmpty =>
+      totals.totalTokens == 0 && daily.isEmpty && byAgent.isEmpty;
+
+  /// @param totalsKey 合计字段名（本机是 `totals`，历史是 `importedTotals`）
+  /// @param prefix 其余字段的前缀（历史是 `imported`）
+  static UsageGroup fromJson(
+    Map<String, dynamic> j, {
+    required String prefix,
+  }) {
+    final totals = _map(j[prefix.isEmpty ? 'totals' : '${prefix}Totals']);
+    String key(String name) =>
+        prefix.isEmpty ? name : '$prefix${name[0].toUpperCase()}${name.substring(1)}';
+    return UsageGroup(
+      totals: UsageBucket.fromJson(totals),
+      sessions: _int(totals['sessions']) ?? 0,
+      daily: _bucketList(j[key('daily')]),
+      byAgent: _bucketList(j[key('byAgent')]),
+      byModel: _bucketList(j[key('byModel')]),
+    );
+  }
+
+  static List<UsageBucket> _bucketList(Object? raw) => [
+    if (raw is List)
+      for (final row in raw)
+        if (row is Map<String, dynamic>) UsageBucket.fromJson(row),
+  ];
+}
+
+/// 用量总览，对应电脑端的 `GET /api/usage/summary`。
+///
+/// 分两组：`managed` 是本 Host 管理期间真实产生的消耗，`imported` 是导入的历史
+/// 会话的累计量。**两者口径不同，不能相加** —— 历史会话的累计值包含 HAPI 之前
+/// 跑过的部分，混在一起会让"本机消耗"失去意义，所以界面必须分开展示。
+class UsageSummary {
+  const UsageSummary({required this.managed, required this.imported});
+
+  final UsageGroup managed;
+  final UsageGroup imported;
+
+  bool get isEmpty => managed.isEmpty && imported.isEmpty;
+
+  factory UsageSummary.fromJson(Map<String, dynamic> j) => UsageSummary(
+    managed: UsageGroup.fromJson(j, prefix: ''),
+    imported: UsageGroup.fromJson(j, prefix: 'imported'),
+  );
+}
+
+/// 一个额度时间窗：已用百分比、窗口长度与下次重置时间。
+///
+/// Codex 只在账户真正受限时才会填 `primary` / `secondary`，平时是 null，因此
+/// 整块可能只有套餐名。
+class RateLimitWindow {
+  const RateLimitWindow({required this.usedPercent, this.windowMinutes, this.resetsAt});
+
+  /// 已用百分比（0–100）。
+  final double usedPercent;
+
+  /// 窗口长度（分钟）：300 约 5 小时、10080 是 7 天、43200 是 30 天。
+  final int? windowMinutes;
+
+  /// 下次重置时间（毫秒时间戳，已从秒归一）。
+  final int? resetsAt;
+
+  static RateLimitWindow? fromJson(Object? raw) {
+    final j = _map(raw);
+    final used = j['usedPercent'] ?? j['used_percent'];
+    if (used is! num) return null;
+    final resets = _int(j['resetsAt'] ?? j['resets_at']);
+    return RateLimitWindow(
+      usedPercent: used.toDouble(),
+      windowMinutes: _int(j['windowMinutes'] ?? j['window_minutes']),
+      // Codex 给秒、其余接口给毫秒；按量级判断，否则会显示成 1970 年。
+      resetsAt: resets == null
+          ? null
+          : (resets < 100000000000 ? resets * 1000 : resets),
+    );
+  }
+}
+
+/// 账户额度快照，对应 Codex `token_count` 上的 `rate_limits`。
+///
+/// 额度跟账户走而不是跟会话走，所以全局只保留最新的一份；[seenAt] 用于判断
+/// 新旧。
+class RateLimits {
+  const RateLimits({
+    required this.seenAt,
+    this.planType,
+    this.primary,
+    this.secondary,
+    this.hasCredits,
+  });
+
+  /// 这份快照的到达时间。
+  final int seenAt;
+
+  /// 套餐标识，如 `pro` / `prolite` / `plus` / `free`。
+  final String? planType;
+  final RateLimitWindow? primary;
+  final RateLimitWindow? secondary;
+
+  /// 是否还有额外额度余额。为 false 且窗口已用满时，就是完全受限状态。
+  final bool? hasCredits;
+
+  bool get isEmpty =>
+      primary == null && secondary == null && planType == null;
+
+  static RateLimits? fromJson(Object? raw, int seenAt) {
+    final j = _map(raw);
+    if (j.isEmpty) return null;
+    final primary = RateLimitWindow.fromJson(j['primary']);
+    final secondary = RateLimitWindow.fromJson(j['secondary']);
+    final plan = _string(j['planType'] ?? j['plan_type']);
+    final credits = _map(j['credits']);
+    final creditsFlag =
+        j['hasCredits'] ??
+        j['has_credits'] ??
+        credits['hasCredits'] ??
+        credits['has_credits'];
+    final hasCredits = creditsFlag is bool ? creditsFlag : null;
+    if (primary == null &&
+        secondary == null &&
+        plan == null &&
+        hasCredits == null)
+      return null;
+    return RateLimits(
+      seenAt: seenAt,
+      planType: plan,
+      primary: primary,
+      secondary: secondary,
+      hasCredits: hasCredits,
     );
   }
 }
@@ -106,6 +325,7 @@ class ChatMessage {
     this.toolOutput,
     this.toolFailed = false,
     this.statusIcon = '',
+    this.rateLimits,
   });
   final String id, localId, role;
 
@@ -136,6 +356,9 @@ class ChatMessage {
   /// 状态行前缀图标（如 `◷`、`⚠️`、`📦`）。
   final String statusIcon;
 
+  /// 该消息携带的账户额度快照；只有 Codex 的 `token_count` 会带。
+  final RateLimits? rateLimits;
+
   /// 是否为工具相关消息（调用卡片或结果）。
   bool get tool =>
       view == MessageView.toolCall || view == MessageView.toolResult;
@@ -164,6 +387,12 @@ class ChatMessage {
       toolOutput: parsed.toolOutput,
       toolFailed: parsed.toolFailed,
       statusIcon: parsed.statusIcon,
+      // 额度搭在 Codex 的 token_count 上一起下发，这里顺手取出来；不是额度消息
+      // 时解析成 null。
+      rateLimits: RateLimits.fromJson(
+        data['rateLimits'],
+        _int(row['createdAt']) ?? 0,
+      ),
     );
   }
 
@@ -441,11 +670,22 @@ String formatTokenCount(int value) {
 }
 
 /// 生成 `◷ Context 12k / 200k (6%) · out 1k · cached 3k` 形式的状态行文案。
+///
+/// 「Context」取**本轮**请求的输入量（`info.last`）：它才是此刻真实占用的规模，
+/// 除以窗口得到的占比才有参考价值。此前这里取了会话累计值（`info.total`），而
+/// 累计输入是会话至今所有请求的总和，会远超窗口 —— 实测出现 69.8M / 258.4k 得出
+/// `27027%` 的荒谬结果。`out` / `cached` / `reasoning` 表达的是这个会话至今的
+/// 消耗，仍取累计值，两者口径不同但各自成立。
 String formatTokenCountLabel(Map<String, dynamic> d) {
   final info = _map(d['info']);
   final total = _map(info['total']).isNotEmpty ? _map(info['total']) : info;
   if (total.isEmpty) return 'Context updated';
-  final input = _int(total['inputTokens'] ?? total['input_tokens']);
+  // 早期载荷没有 `last`，此时退回累计值：显示会退化成改动前的样子，但不至于
+  // 丢掉整行信息。
+  final last = _map(info['last']);
+  final input =
+      _int(last['inputTokens'] ?? last['input_tokens']) ??
+      _int(total['inputTokens'] ?? total['input_tokens']);
   final output = _int(total['outputTokens'] ?? total['output_tokens']);
   final cached = _int(
     total['cachedInputTokens'] ??

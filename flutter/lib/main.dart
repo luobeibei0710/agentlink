@@ -10,6 +10,7 @@ import 'message_views.dart';
 import 'qr_scanner.dart';
 import 'device_page.dart';
 import 'trusted_devices.dart';
+import 'usage_page.dart';
 
 /// 对话气泡的最大宽度；手机竖屏不会触及，宽屏与桌面窗口下限制阅读行宽。
 const double _kMessageMaxWidth = 720;
@@ -19,27 +20,19 @@ enum ChatComposerAction {
   /// 正在执行：只能停止。
   stop,
 
-  /// 会话已结束：需要先恢复才能继续输入。
-  resume,
-
-  /// 空闲在线：可以发送消息。
+  /// 可以发送消息；会话不在线时发送会自动先恢复。
   send,
 }
 
 /// 依据会话状态决定输入区主按钮的形态。
 ///
-/// 判定顺序对应交互含义：正在执行时用户最需要的是中断，其次是恢复已结束的
-/// 会话，最后才是发送新消息。
+/// 只有「执行中」需要换成停止键。历史会话离线时不再要求用户先点一次「继续」：
+/// 发送本身会先恢复会话再投递，因此这里不需要第二种形态。
 ///
-/// @param active 会话进程是否在线
 /// @param thinking 会话是否正在执行
 /// @returns 主按钮应当呈现的形态
-ChatComposerAction resolveComposerAction({
-  required bool active,
-  required bool thinking,
-}) {
+ChatComposerAction resolveComposerAction({required bool thinking}) {
   if (thinking) return ChatComposerAction.stop;
-  if (!active) return ChatComposerAction.resume;
   return ChatComposerAction.send;
 }
 
@@ -536,6 +529,14 @@ class _HomeState extends State<Home> {
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
             actions: [
+              // 用量入口与刷新并列：两者都是「看一眼全局状态」，不属于某个会话。
+              IconButton(
+                tooltip: '用量',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => UsagePage(model)),
+                ),
+                icon: const Icon(Icons.insights_outlined),
+              ),
               IconButton(
                 tooltip: '刷新',
                 onPressed: () async {
@@ -1487,25 +1488,105 @@ class _ChatState extends State<Chat> {
   );
   final scroll = ScrollController();
   bool sending = false;
+
+  /// 已渲染过的消息条数，用来判断是否出现了新内容。
+  int _seenMessages = 0;
+
+  /// 已弹出过确认层的请求 id，避免每轮刷新都重复弹。
+  final _promptedRequests = <String>{};
+
   @override
   void initState() {
     super.initState();
     text.addListener(() => widget.model.setDraft(sessionId, text.text));
+    widget.model.addListener(_onModelChanged);
   }
 
   @override
   void dispose() {
+    widget.model.removeListener(_onModelChanged);
     text.dispose();
     scroll.dispose();
     super.dispose();
   }
 
+  /// 模型变化时跟随最新消息滚动，并在出现新的审批请求时弹出确认层。
+  void _onModelChanged() {
+    _followLatestMessage();
+    if (widget.model.requests.isNotEmpty) _promptRequest();
+  }
+
+  /// 有新消息时滚到底部。
+  ///
+  /// 只在用户本来就贴着底部时跟随：他主动往上翻看历史时不该被拽回来，
+  /// 但新增的回复必须能自己显现，不该等他手动滑。
+  void _followLatestMessage() {
+    final count = widget.model.messages.length;
+    if (count == _seenMessages) return;
+    _seenMessages = count;
+    if (count == 0) return;
+    final atBottom =
+        !scroll.hasClients ||
+        scroll.position.maxScrollExtent - scroll.offset <= 120;
+    if (!atBottom) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !scroll.hasClients) return;
+      scroll.animateTo(
+        scroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  /// 出现新的审批请求时自动弹出确认层。
+  void _promptRequest() {
+    final request = widget.model.requests.first;
+    if (!_promptedRequests.add(request.id)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _openRequestSheet(request);
+    });
+  }
+
+  /// 打开某个待确认请求的操作层。
+  ///
+  /// 确认层用 AnimatedBuilder 订阅模型：提交后电脑端裁决会改变请求状态，
+  /// 内容要跟着刷新，而不是停在打开时的快照。
+  void _openRequestSheet(PendingRequest request) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => AnimatedBuilder(
+        animation: widget.model,
+        builder: (context, _) => SafeArea(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(AgentLinkSpace.md),
+              child: RequestCard(
+                model: widget.model,
+                request: widget.model.requests
+                        .where((item) => item.id == request.id)
+                        .firstOrNull ??
+                    request,
+                key: ValueKey('${request.sessionId}/${request.id}'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> send() async {
     if (sending || text.text.trim().isEmpty) return;
     setState(() => sending = true);
-    await widget.model.send(text.text);
+    // 会话不在线时由模型先恢复再发送；恢复可能把会话切到新的 id，所以回填草稿
+    // 时按当时的选中会话取值，而不是捕获在 initState 里的旧 id。
+    await widget.model.sendOrResume(text.text);
     if (mounted) {
-      text.text = widget.model.draftFor(sessionId);
+      text.text = widget.model.draftFor(
+        widget.model.selectedSession ?? sessionId,
+      );
       setState(() => sending = false);
       if (scroll.hasClients)
         unawaited(
@@ -1639,6 +1720,63 @@ class _ChatState extends State<Chat> {
     await widget.model.setPermissionMode(picked);
   }
 
+  /// 选择当前会话使用的模型。
+  ///
+  /// 模型列表由电脑端给出（Codex 走模型 RPC，CodeBuddy 取自会话的 ACP 配置），
+  /// 所以要先请求一次。拉不到时如实说明，而不是弹一个空白面板 —— 用户分不清
+  /// 「没有可选模型」和「还没准备好」。
+  Future<void> _pickModel() async {
+    final models = await widget.model.availableModels(sessionId);
+    if (!mounted) return;
+    if (models == null || models.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('这个会话暂时取不到模型列表')));
+      return;
+    }
+    final current = widget.model.modelFor(sessionId);
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(
+                '模型',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              subtitle: const Text('选择这个会话使用的模型'),
+            ),
+            const Divider(height: 1, color: AgentLinkColors.line),
+            // CodeBuddy 有十几个模型且带计费说明，窄屏上会超出屏幕。
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final option in models)
+                    ListTile(
+                      title: Text(option.label),
+                      subtitle: option.note == null ? null : Text(option.note!),
+                      trailing: option.id == current
+                          ? const Icon(Icons.check, color: AgentLinkColors.brand)
+                          : null,
+                      onTap: () => Navigator.pop(context, option.id),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AgentLinkSpace.sm),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || picked == current) return;
+    await widget.model.setModel(picked);
+  }
+
   @override
   Widget build(BuildContext context) {
     final model = widget.model;
@@ -1662,7 +1800,26 @@ class _ChatState extends State<Chat> {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       Text(
-                        '${session?.flavor == 'codebuddy' ? 'CodeBuddy' : 'Codex'} · ${session?.active == true ? '在线' : '已归档'}',
+                        [
+                          session?.flavor == 'codebuddy'
+                              ? 'CodeBuddy'
+                              : 'Codex',
+                          // 恢复期间先本地报「正在启动」，不必等下一次轮询把状态
+                          // 带回来 —— 电脑端拉起进程要几秒，这段空窗最容易让人
+                          // 以为操作没生效。
+                          if (model.resuming.contains(sessionId))
+                            '正在启动…'
+                          else if (session?.active != true)
+                            '已归档'
+                          else if (session?.thinking == true)
+                            '运行中'
+                          else
+                            '在线',
+                          // 当前模型；电脑端没上报时不占位，避免出现空的一节。
+                          ?model.modelFor(sessionId),
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelSmall,
                       ),
                     ],
@@ -1678,8 +1835,19 @@ class _ChatState extends State<Chat> {
                     .isNotEmpty)
                   IconButton(
                     tooltip: '权限模式',
+                    visualDensity: VisualDensity.compact,
                     onPressed: _pickPermissionMode,
                     icon: const Icon(Icons.shield_outlined),
+                  ),
+                // 模型入口：只对已知支持切换模型的 Agent 显示，避免在必然拿不到
+                // 列表的会话上给出一个点了会报错的按钮。
+                if (session?.flavor == 'codex' ||
+                    session?.flavor == 'codebuddy')
+                  IconButton(
+                    tooltip: '模型',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _pickModel,
+                    icon: const Icon(Icons.memory),
                   ),
                 // 停止按钮在有会话时始终保留，但只有执行中才可点；会话结束后
                 // 换成恢复入口。不可用的动作保持可见并置灰，避免按钮位置跳动。
@@ -1707,23 +1875,36 @@ class _ChatState extends State<Chat> {
             ),
           ),
         ),
+        // 待确认请求不再固定占据消息列表上方。长命令会一直压着对话区，而用户
+        // 真正想看的往往是下面的新回复；改成：新请求自动弹出确认层，收起后由
+        // 这个提示条负责重新打开。
         if (model.requests.isNotEmpty)
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight:
-                  (MediaQuery.sizeOf(context).height -
-                      MediaQuery.viewInsetsOf(context).bottom) *
-                  .24,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AgentLinkSpace.md,
+              0,
+              AgentLinkSpace.md,
+              AgentLinkSpace.sm,
             ),
-            child: SingleChildScrollView(
-              child: Column(
+            child: ListCard(
+              onTap: () => _openRequestSheet(model.requests.first),
+              child: Row(
                 children: [
-                  for (final request in model.requests)
-                    RequestCard(
-                      model: model,
-                      request: request,
-                      key: ValueKey('${request.sessionId}/${request.id}'),
+                  const Icon(
+                    Icons.pending_actions,
+                    size: 20,
+                    color: AgentLinkColors.amber,
+                  ),
+                  const SizedBox(width: AgentLinkSpace.md),
+                  Expanded(
+                    child: Text(
+                      '${model.requests.length} 项操作等待确认 · 点击处理',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
+                  ),
+                  const RowChevron(),
                 ],
               ),
             ),
@@ -1762,15 +1943,17 @@ class _ChatState extends State<Chat> {
                     controller: text,
                     minLines: 1,
                     maxLines: 5,
-                    enabled: session?.active == true,
+                    // 输入始终可用：历史会话离线时，发送会自动先恢复会话，
+                    // 不再要求用户先点一次「继续」再输入。
                     decoration: InputDecoration(
-                      hintText: session?.active == true ? '输入消息…' : '点击继续会话后发送',
+                      hintText: session?.active == true
+                          ? '输入消息…'
+                          : '输入消息，发送后自动启动会话…',
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 switch (resolveComposerAction(
-                  active: session?.active == true,
                   thinking: session?.thinking == true,
                 )) {
                   // 执行中：主按钮变成停止，避免误发新消息。
@@ -1779,26 +1962,18 @@ class _ChatState extends State<Chat> {
                     onPressed: model.abortSelected,
                     icon: const Icon(Icons.stop),
                   ),
-                  // 会话已结束：先恢复再输入。
-                  ChatComposerAction.resume => IconButton.filled(
-                    tooltip: model.resuming.contains(sessionId)
-                        ? '正在继续…'
-                        : '继续会话',
-                    onPressed: model.resuming.contains(sessionId)
-                        ? null
-                        : model.resumeSelected,
-                    icon: model.resuming.contains(sessionId)
+                  ChatComposerAction.send => IconButton.filled(
+                    tooltip: session?.active == true ? '发送' : '启动会话并发送',
+                    onPressed: !sending ? send : null,
+                    // 启动会话期间也在这里转圈：电脑端拉起进程要几秒，
+                    // 没有即时反馈用户会以为点击没生效而反复点。
+                    icon: sending || model.resuming.contains(sessionId)
                         ? const SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.play_arrow),
-                  ),
-                  ChatComposerAction.send => IconButton.filled(
-                    tooltip: '发送',
-                    onPressed: !sending && session?.active == true ? send : null,
-                    icon: const Icon(Icons.send),
+                        : const Icon(Icons.send),
                   ),
                 },
               ],
@@ -1821,6 +1996,12 @@ class RequestCard extends StatefulWidget {
 class _RequestCardState extends State<RequestCard> {
   late final answers = InputAnswers(widget.request);
 
+  /// 命令详情默认收起。
+  ///
+  /// 确认这个动作本身不需要通读整条命令，而一条长命令会把对话区压满好几屏。
+  /// 需要核对时点开即可，可核查性没有丢；危险提示不受此开关影响，始终可见。
+  bool _showDetail = false;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1833,7 +2014,9 @@ class _RequestCardState extends State<RequestCard> {
     final summary = isQuestions ? null : summarizeRequest(r);
 
     return Card(
-      color: AgentLinkColors.sand,
+      // 纯白背景：审批是对话流里的一个环节，不需要靠底色抢注意力；
+      // 需要留意的信息（工具名、危险提示）用强调色单独表达。
+      color: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: const BorderSide(color: AgentLinkColors.line),
@@ -1917,40 +2100,70 @@ class _RequestCardState extends State<RequestCard> {
                 const SizedBox(height: AgentLinkSpace.md),
               ],
             ] else if (summary != null) ...[
-              // 待确认的操作放在白底区里，与琥珀底形成对比，像一段待批的指令。
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(AgentLinkSpace.md),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AgentLinkColors.line),
-                ),
-                child: SelectableText(
-                  summary.headline,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                    height: 1.5,
-                  ),
-                ),
-              ),
-              if (summary.details.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: AgentLinkSpace.sm),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              // 详情默认收起，只留一个展开入口：确认动作本身不需要通读整条
+              // 命令，而长命令会把对话区压满好几屏。展开后仍是原来那段
+              // 白底等宽文本，可核查性没有牺牲。
+              InkWell(
+                onTap: () => setState(() => _showDetail = !_showDetail),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: AgentLinkSpace.sm),
+                  child: Row(
                     children: [
-                      for (final (label, value) in summary.details)
-                        Text(
-                          '$label：$value',
+                      Expanded(
+                        child: Text(
+                          _showDetail ? '收起命令详情' : '查看命令详情',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: AgentLinkColors.muted,
+                            color: AgentLinkColors.brand,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
+                      ),
+                      Icon(
+                        _showDetail ? Icons.expand_less : Icons.expand_more,
+                        size: 18,
+                        color: AgentLinkColors.brand,
+                      ),
                     ],
                   ),
                 ),
+              ),
+              if (_showDetail) ...[
+                // 待确认的操作放在白底区里，与琥珀底形成对比，像一段待批的指令。
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(AgentLinkSpace.md),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AgentLinkColors.line),
+                  ),
+                  child: SelectableText(
+                    summary.headline,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+                if (summary.details.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: AgentLinkSpace.sm),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final (label, value) in summary.details)
+                          Text(
+                            '$label：$value',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AgentLinkColors.muted,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
             ],
             if (isQuestions && !hasValidQuestions)
               Text(

@@ -689,6 +689,122 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// 会话模型；只记录在 App 内切换过的会话。
+  ///
+  /// 与权限模式同理：优先采用电脑端上报的值，本地记录仅作兜底。
+  final Map<String, String> _models = {};
+
+  /// 返回指定会话当前生效的模型 id。
+  String? modelFor(String sessionId) {
+    final reported = sessions
+        .where((session) => session.id == sessionId)
+        .firstOrNull
+        ?.model;
+    return reported ?? _models[sessionId];
+  }
+
+  /// 拉取指定会话可用的模型列表。
+  ///
+  /// 返回 null 表示该 Agent 不支持切换模型，或电脑端还没准备好 —— 与「列表为空」
+  /// 区分开，避免给用户弹出一个空的选择面板。
+  ///
+  /// @param sessionId 目标会话
+  /// @returns 可选模型，或 null 表示不可用
+  Future<List<ModelOption>?> availableModels(String sessionId) async {
+    final current = api;
+    if (current == null || _disposed) return null;
+    final flavor = sessions
+        .where((session) => session.id == sessionId)
+        .firstOrNull
+        ?.flavor;
+    if (flavor == null || flavor.isEmpty) return null;
+    try {
+      return await current.models(sessionId, flavor);
+    } catch (_) {
+      // 列表拉不到时按「不支持」处理：界面保持没有入口，比报错更少打扰。
+      return null;
+    }
+  }
+
+  /// 设置当前会话的模型。
+  ///
+  /// @param model 电脑端认可的模型 id
+  Future<void> setModel(String model) async {
+    final current = api, id = selectedSession;
+    if (current == null || id == null || _disposed || model.isEmpty) return;
+    final generation = _connectionGeneration, selection = _selectionEpoch;
+    try {
+      await current.setModel(id, model);
+      if (!_selectionIsCurrent(current, generation, id, selection)) return;
+      _models[id] = model;
+      _safeNotify();
+      // 拉一次目录，让界面显示的是电脑端确认后的模型。
+      unawaited(refresh());
+    } catch (exception) {
+      await _handleSelectionFailure(
+        exception,
+        current,
+        generation,
+        id,
+        selection,
+      );
+    }
+  }
+
+  /// 账户额度快照；null 表示还没从消息里见过。
+  ///
+  /// 额度跟账户走而不是跟会话走，所以全局只留最新的一份。数据源是消息流里的
+  /// `token_count`（Codex 会顺带下发套餐用量），因此它随消息自然更新，不需要
+  /// 额外的接口或轮询。
+  RateLimits? rateLimits;
+
+  /// 用量总览；null 表示还没拉取过。
+  ///
+  /// 与消息流不同，用量是一次性查询 —— 页面打开时拉一次即可，不参与轮询。
+  UsageSummary? usage;
+
+  /// 拉取用量总览。
+  ///
+  /// @param range `7d` / `30d` / `all`
+  Future<void> loadUsage(String range) async {
+    final current = api;
+    if (_disposed) return;
+    if (current == null) {
+      // 必须留下原因：页面此前把「没连上」和「没有数据」渲染成同一句话 ——
+      // 用户看到的「这段时间没有用量」，其实来自一次根本没发出去的请求。
+      error = '尚未连接电脑，无法读取用量';
+      _safeNotify();
+      return;
+    }
+    try {
+      final summary = await current.usageSummary(range, deviceTimeZone());
+      if (_disposed) return;
+      usage = summary;
+      error = null;
+      _safeNotify();
+    } catch (exception) {
+      if (_disposed) return;
+      error = '无法读取用量：$exception';
+      _safeNotify();
+    }
+  }
+
+  /// 设备时区的 IANA 名称，供电脑端按天分组用。
+  ///
+  /// Dart 只暴露时区缩写和偏移量，拿不到 IANA 名，而 `Intl.DateTimeFormat`
+  /// 只认 IANA。这里用等价的固定偏移时区 `Etc/GMT±N` 代替：对「按天分组」
+  /// 足够准确，代价是不处理夏令时（中国等无夏令时的地区完全等价）。
+  /// 偏移不是整小时（如印度 +5:30）时退回 UTC —— 错得整点总好过报错。
+  @visibleForTesting
+  static String deviceTimeZone() {
+    final offset = DateTime.now().timeZoneOffset;
+    if (offset.inMinutes % 60 != 0) return 'UTC';
+    final hours = offset.inHours;
+    if (hours == 0) return 'UTC';
+    // Etc/GMT 的符号与日常直觉相反：Etc/GMT-8 表示 UTC+8。
+    return 'Etc/GMT${hours > 0 ? '-' : '+'}${hours.abs()}';
+  }
+
   Future<void> abortSelected() async {
     final current = api, id = selectedSession;
     if (current == null || id == null || _disposed) return;
@@ -728,25 +844,57 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> resumeSelected() async {
-    final current = api, id = selectedSession, currentHub = hub;
-    if (current == null || id == null || currentHub == null || _disposed)
-      return;
-    if (!resuming.add(id)) return;
+    final id = selectedSession;
+    if (id == null) return;
+    await _resume(id);
+  }
+
+  /// 发送消息；会话已结束时先恢复再发送。
+  ///
+  /// 导入的历史会话在电脑上没有对应进程（`active == false`），直接发送会被拒绝。
+  /// 此前用户必须先点「继续会话」再发消息，两步操作、且第一步不可见 —— 这里合成
+  /// 一步：用户只表达「我要说话」，启动进程属于实现细节。
+  ///
+  /// @param text 消息正文
+  /// @param retryLocalId 重试待发送消息时沿用的本地 id
+  Future<void> sendOrResume(String text, {String? retryLocalId}) async {
+    final id = selectedSession;
+    if (id == null || _disposed) return;
+    if (!_sessionIsActive(id) && !await _resume(id)) return;
+    await send(text, retryLocalId: retryLocalId);
+  }
+
+  /// 会话进程是否在电脑上运行。
+  bool _sessionIsActive(String id) =>
+      sessions.where((session) => session.id == id).firstOrNull?.active == true;
+
+  /// 恢复指定会话；成功返回 true。
+  ///
+  /// 电脑端恢复后可能新建一个活跃会话，此时返回的新 id 与传入的不同，模型会把
+  /// `selectedSession` 切换到新 id 上。
+  Future<bool> _resume(String id) async {
+    final current = api, currentHub = hub;
+    if (current == null || currentHub == null || _disposed) return false;
+    if (!resuming.add(id)) return false;
+    // 恢复期间状态变化快，切到更短的轮询间隔。
+    _startPolling();
     _safeNotify();
     final generation = _connectionGeneration, selection = _selectionEpoch;
+    var resumed = false;
     try {
       final replacement = await current.resume(id);
       await refresh();
-      if (!_selectionIsCurrent(current, generation, id, selection)) return;
+      if (!_selectionIsCurrent(current, generation, id, selection)) return false;
       final oldDraft = _drafts[currentHub]?[id];
       if (replacement != id && oldDraft != null && oldDraft.isNotEmpty) {
         final rows = _drafts.putIfAbsent(currentHub, () => {});
         rows.putIfAbsent(replacement, () => oldDraft);
         rows.remove(id);
         await _writeCurrentState(activeHub: currentHub);
-        if (!_selectionIsCurrent(current, generation, id, selection)) return;
+        if (!_selectionIsCurrent(current, generation, id, selection)) return false;
       }
       await openSession(replacement); // Outbox intentionally remains on id.
+      resumed = true;
     } catch (exception) {
       await _handleSelectionFailure(
         exception,
@@ -757,17 +905,22 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
       );
     } finally {
       resuming.remove(id);
+      // 恢复结束，轮询回到常规间隔。
+      _startPolling();
       _safeNotify();
     }
+    return resumed;
   }
 
   void _startPolling() {
     _poll?.cancel();
     if (!_foreground || _disposed || api == null) return;
-    _poll = Timer.periodic(
-      const Duration(seconds: 2),
-      (_) => unawaited(_pollOnce()),
-    );
+    // 恢复会话时电脑端要拉起进程，状态在数秒内连续变化；此时缩短间隔，让
+    // 「已结束 → 在线」尽快显示出来，平时保持 2 秒避免无谓的请求。
+    final interval = resuming.isEmpty
+        ? const Duration(seconds: 2)
+        : const Duration(milliseconds: 600);
+    _poll = Timer.periodic(interval, (_) => unawaited(_pollOnce()));
   }
 
   Future<void> _pollOnce() async {
@@ -813,6 +966,21 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
         page.afterSeq ?? page.snapshotHeadSeq ?? newest?.$2 ?? _afterSeq;
     _afterAt = page.afterAt ?? page.snapshotHeadAt ?? newest?.$1 ?? _afterAt;
     _reconcileOutbox(sessionId);
+    _trackRateLimits(page.messages);
+  }
+
+  /// 从新到达的消息里取账户额度，晚于已有记录才覆盖。
+  ///
+  /// Codex 把额度搭在 `token_count` 上一起下发（另外还有独立的
+  /// `account/rateLimits/updated` 通知），所以额度随消息流自然更新。
+  void _trackRateLimits(List<ChatMessage> rows) {
+    for (final row in rows) {
+      final limits = row.rateLimits;
+      if (limits == null) continue;
+      if (rateLimits == null || limits.seenAt >= rateLimits!.seenAt) {
+        rateLimits = limits;
+      }
+    }
   }
 
   void _applyRequests(List<PendingRequest> fresh) {

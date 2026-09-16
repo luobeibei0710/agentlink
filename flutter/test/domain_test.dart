@@ -203,6 +203,56 @@ void main() {
     );
   });
 
+  test('parses a usage summary into managed and imported groups', () {
+    Map<String, dynamic> bucket(String key, int tokens) => {
+      'key': key,
+      'inputTokens': tokens - 200,
+      'outputTokens': 200,
+      'cacheReadTokens': 300,
+      'cacheCreationTokens': 50,
+      'totalTokens': tokens,
+      'uncachedTokens': 900,
+      'requests': 3,
+    };
+
+    final summary = UsageSummary.fromJson({
+      'totals': {...bucket('', 1200), 'sessions': 2},
+      'daily': [bucket('2026-09-15', 1200)],
+      'byAgent': [bucket('codebuddy', 1200)],
+      'byModel': [bucket('hy4-preview', 1200)],
+      'importedTotals': {...bucket('', 1000000), 'sessions': 7},
+      'importedDaily': [bucket('2026-09-14', 1000000)],
+      'importedByAgent': [bucket('codex', 1000000)],
+      'importedByModel': [bucket('gpt-6-astra', 1000000)],
+    });
+
+    expect(summary.managed.totals.totalTokens, 1200);
+    expect(summary.managed.totals.requests, 3);
+    expect(summary.managed.totals.uncachedTokens, 900);
+    // sessions 只挂在合计上，不属于 UsageBucket。
+    expect(summary.managed.sessions, 2);
+    expect(summary.managed.daily.single.key, '2026-09-15');
+    expect(summary.managed.byAgent.single.key, 'codebuddy');
+    expect(summary.managed.byModel.single.key, 'hy4-preview');
+
+    // 历史组独立解析：口径不同，绝不能并进本机消耗。
+    expect(summary.imported.totals.totalTokens, 1000000);
+    expect(summary.imported.sessions, 7);
+    expect(summary.imported.byAgent.single.key, 'codex');
+    expect(summary.imported.byModel.single.key, 'gpt-6-astra');
+    expect(summary.isEmpty, isFalse);
+  });
+
+  test('an empty usage summary degrades to zeros instead of throwing', () {
+    // 电脑端版本较旧、或该 Host 还没有任何用量时都会走到这里。
+    final summary = UsageSummary.fromJson(const {});
+    expect(summary.managed.totals.totalTokens, 0);
+    expect(summary.imported.totals.totalTokens, 0);
+    expect(summary.managed.daily, isEmpty);
+    expect(summary.imported.byModel, isEmpty);
+    expect(summary.isEmpty, isTrue);
+  });
+
   test('exposes the permission modes each agent actually supports', () {
     expect(permissionModesForFlavor('codex').map((o) => o.mode), [
       'default',

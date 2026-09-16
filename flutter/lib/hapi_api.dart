@@ -276,6 +276,64 @@ class HapiApi {
     '/api/sessions/${Uri.encodeComponent(id)}/permission-mode',
     body: {'mode': mode},
   );
+
+  /// 列出会话可用的模型。
+  ///
+  /// 两类 Agent 的来源不同 —— Codex 走 `listCodexModels` RPC（返回 modelId/name），
+  /// CodeBuddy 取自该会话的 ACP 配置选项（额外带计费说明）。这里统一成
+  /// [ModelOption]，调用方不必区分。
+  ///
+  /// @param id 会话 id
+  /// @param flavor Agent 类型，决定请求哪个端点
+  /// @returns 可选模型；服务端未提供时为 null 表示「不支持」而非「列表为空」
+  Future<List<ModelOption>?> models(String id, String flavor) async {
+    final endpoint = flavor == 'codebuddy'
+        ? 'codebuddy-models'
+        : 'codex-models';
+    final payload = await _json(
+      'GET',
+      '/api/sessions/${Uri.encodeComponent(id)}/$endpoint',
+    );
+    if (payload['success'] == false) return null;
+    final rows = payload['models'];
+    if (rows is! List) return const [];
+    return [
+      for (final row in rows)
+        if (row is Map)
+          ModelOption(
+            '${row['modelId'] ?? ''}',
+            '${row['name'] ?? row['modelId'] ?? ''}',
+            note: row['description'] == null ? null : '${row['description']}',
+          ),
+    ].where((option) => option.id.isNotEmpty).toList();
+  }
+
+  /// 设置会话的模型。
+  ///
+  /// @param id 会话 id
+  /// @param model 电脑端认可的模型 id
+  Future<void> setModel(String id, String model) async => _json(
+    'POST',
+    '/api/sessions/${Uri.encodeComponent(id)}/model',
+    body: {'model': model},
+  );
+
+  /// 拉取用量总览。
+  ///
+  /// 电脑端只统计由本 Host 管理的会话，导入的历史不计入。
+  ///
+  /// @param range `7d` / `30d` / `all`
+  /// @param timeZone IANA 时区名；按天分组依赖它，传错会让日期错位
+  /// @returns 用量总览
+  Future<UsageSummary> usageSummary(String range, String timeZone) async {
+    final payload = await _json(
+      'GET',
+      '/api/usage/summary'
+          '?range=${Uri.encodeComponent(range)}'
+          '&timeZone=${Uri.encodeComponent(timeZone)}',
+    );
+    return UsageSummary.fromJson(payload);
+  }
   Future<String> resume(String id) async {
     final r = await _json(
       'POST',
