@@ -99,12 +99,18 @@ private fun formatTokenCountEvent(event: AgentEvent): EventPresentation {
     val reasoningTokens = asNumber(total["reasoningOutputTokens"].orNull() ?: total["reasoning_output_tokens"])
     val contextWindow = asNumber(info?.get("modelContextWindow").orNull() ?: info?.get("model_context_window"))
 
+    // 上下文占用取本轮请求的输入量（`last`）：它才是此刻真实占用的规模。会话累计
+    // 输入（`total`）是至今所有请求的总和，除以窗口会得出远超 100% 的数字（实测
+    // 69.8M / 258.4k → 27027%）。早期载荷没有 `last` 时退回累计值。
+    val last: JsonObject? = info?.let { asObject(it["last"]) }
+    val contextTokens = last?.let { asNumber(it["inputTokens"].orNull() ?: it["input_tokens"]) } ?: inputTokens
+
     val parts = mutableListOf<String>()
-    if (inputTokens != null && contextWindow != null) {
-        val pct = Math.round(inputTokens / contextWindow * 100)
-        parts.add("Context ${formatTokenCount(inputTokens)} / ${formatTokenCount(contextWindow)} ($pct%)")
-    } else if (inputTokens != null) {
-        parts.add("Context ${formatTokenCount(inputTokens)}")
+    if (contextTokens != null && contextWindow != null) {
+        val pct = Math.round(contextTokens / contextWindow * 100)
+        parts.add("Context ${formatTokenCount(contextTokens)} / ${formatTokenCount(contextWindow)} ($pct%)")
+    } else if (contextTokens != null) {
+        parts.add("Context ${formatTokenCount(contextTokens)}")
     } else {
         parts.add("Context updated")
     }
