@@ -31,8 +31,17 @@ describe('Gemini CLI sunset (read-only, not creatable)', () => {
 })
 
 describe('getPermissionModesForFlavor', () => {
-    test('CodeBuddy exposes only its standard ask-before-tools mode', () => {
-        expect(getPermissionModesForFlavor('codebuddy')).toEqual(['default'])
+    test('CodeBuddy exposes its full ask-before-tools ladder', () => {
+        expect(getPermissionModesForFlavor('codebuddy')).toEqual([
+            'default',
+            'acceptEdits',
+            'plan',
+            'auto',
+            'dontAsk',
+            'bypassPermissions',
+            'fullAccess',
+            'delegate'
+        ])
     })
     test("returns the conservative Grok modes", () => {
         expect(getPermissionModesForFlavor('grok')).toEqual([
@@ -72,11 +81,13 @@ describe('getPermissionModeOptionsForFlavor', () => {
 })
 
 describe('isPermissionModeAllowedForFlavor', () => {
-    test('CodeBuddy rejects automatic and bypass permission modes', () => {
+    test('CodeBuddy accepts its own ladder and rejects modes outside it', () => {
         expect(isPermissionModeAllowedForFlavor('default', 'codebuddy')).toBe(true)
-        expect(isPermissionModeAllowedForFlavor('auto', 'codebuddy')).toBe(false)
+        expect(isPermissionModeAllowedForFlavor('acceptEdits', 'codebuddy')).toBe(true)
+        expect(isPermissionModeAllowedForFlavor('auto', 'codebuddy')).toBe(true)
+        expect(isPermissionModeAllowedForFlavor('bypassPermissions', 'codebuddy')).toBe(true)
+        // yolo 是 Claude 侧的档位，不在 CodeBuddy 的列表里。
         expect(isPermissionModeAllowedForFlavor('yolo', 'codebuddy')).toBe(false)
-        expect(isPermissionModeAllowedForFlavor('bypassPermissions', 'codebuddy')).toBe(false)
     })
     test("allows only the supported Grok modes", () => {
         expect(isPermissionModeAllowedForFlavor('default', 'grok')).toBe(true)

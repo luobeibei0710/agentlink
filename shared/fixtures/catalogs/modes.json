@@ -54,6 +54,41 @@
                 "label": "Default",
                 "mode": "default",
                 "tone": "neutral"
+            },
+            {
+                "label": "Accept Edits",
+                "mode": "acceptEdits",
+                "tone": "warning"
+            },
+            {
+                "label": "Plan Mode",
+                "mode": "plan",
+                "tone": "info"
+            },
+            {
+                "label": "Auto",
+                "mode": "auto",
+                "tone": "warning"
+            },
+            {
+                "label": "Don't Ask",
+                "mode": "dontAsk",
+                "tone": "warning"
+            },
+            {
+                "label": "Yolo",
+                "mode": "bypassPermissions",
+                "tone": "danger"
+            },
+            {
+                "label": "Full Access",
+                "mode": "fullAccess",
+                "tone": "danger"
+            },
+            {
+                "label": "Delegate",
+                "mode": "delegate",
+                "tone": "neutral"
             }
         ],
         "codex": [
