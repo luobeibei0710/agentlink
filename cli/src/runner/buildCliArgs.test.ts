@@ -385,13 +385,19 @@ describe('buildCliArgs', () => {
         ])
     })
 
-    it('fails closed before spawning CodeBuddy with automatic approval inputs', () => {
+    it('rejects the yolo shortcut for CodeBuddy but passes explicit modes through', () => {
+        // CodeBuddy 的 ACP 子进程只认 --permission-mode；--yolo 简写会让它启动失败，
+        // 所以这里必须在 spawn 之前拦下。
         expect(() => buildCliArgs('codebuddy', { directory: '/tmp' }, true))
-            .toThrow('default permission mode')
-        expect(() => buildCliArgs('codebuddy', {
+            .toThrow('bypassPermissions')
+
+        // 合法档位照常透传：CodeBuddy 的档位不止 default，共 8 档（见 shared/modes.ts），
+        // 早期实现把非 default 一律拒掉，那个限制已经不成立。
+        const args = buildCliArgs('codebuddy', {
             directory: '/tmp',
             permissionMode: 'auto'
-        })).toThrow('default permission mode')
+        })
+        expect(args).toEqual(expect.arrayContaining(['--permission-mode', 'auto']))
     })
 
     it('does not emit --hapi-session-id for a non-pty flavor', () => {

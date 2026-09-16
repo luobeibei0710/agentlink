@@ -47,7 +47,8 @@ export type AcpConfigOptionDescriptor = {
     id: string;
     category?: string;
     currentValue?: string;
-    options: Array<{ value: string; name?: string }>;
+    /** 选项的说明文本；CodeBuddy 用它标注计费倍率（如 `x0.29 credits`）。 */
+    options: Array<{ value: string; name?: string; description?: string }>;
 };
 
 type AcpInitializeResult = {
@@ -948,6 +949,15 @@ export class AcpSdkBackend implements AgentBackend {
         // work is queued so async image registration preserves event order.
         if (sessionId) {
             this.captureAvailableCommands(sessionId, update);
+            // CodeBuddy 把会话级配置（权限档位、模型、思考等级、沙箱）放在
+            // session/update 的 config_option_update 里下发，而不是放在
+            // session/new 的响应里。此前只从响应捕获，导致这类会话的
+            // configOptions 始终为空：权限档位得靠硬编码 configId 绕过，
+            // 模型列表则完全取不到。
+            if (isObject(update) && update.sessionUpdate === ACP_SESSION_UPDATE_TYPES.configOptionUpdate) {
+                this.captureSessionConfigOptions(sessionId, update);
+                this.captureSessionModelsMetadata(sessionId, update);
+            }
         }
         this.forwardSessionInfoUpdate(sessionId, update);
         this.captureUsageUpdate(update);
@@ -1362,7 +1372,8 @@ export class AcpSdkBackend implements AgentBackend {
                         .filter((option): option is Record<string, unknown> => isObject(option))
                         .map((option) => ({
                             value: asString(option.value) ?? '',
-                            name: asString(option.name) ?? undefined
+                            name: asString(option.name) ?? undefined,
+                            description: asString(option.description) ?? undefined
                         }))
                         .filter((option) => option.value.length > 0)
                 };

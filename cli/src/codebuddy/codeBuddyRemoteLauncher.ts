@@ -10,6 +10,7 @@ import {
 } from '@/modules/common/remote/RemoteLauncherBase'
 import { AcpPermissionHandler } from '@/modules/common/permission/AcpPermissionHandler'
 import { registerSessionConfigRpc } from '@/agent/sessionConfigRpc'
+import { RPC_METHODS } from '@hapi/protocol/rpcMethods'
 import type { PermissionMode } from '@hapi/protocol/types'
 import { createCodeBuddyBackend } from './utils/codeBuddyBackend'
 import type { CodeBuddySession } from './session'
@@ -91,14 +92,44 @@ export class CodeBuddyRemoteLauncher extends RemoteLauncherBase {
         registerSessionConfigRpc({
             rpcHandlerManager: this.session.client.rpcHandlerManager,
             flavor: 'codebuddy',
-            modelMode: 'ignore',
+            // 模型与权限档位走同一条 ACP 通道：CodeBuddy 在 config_option_update
+            // 里同时下发 category=model 的选项与当前值，所以这里可以像档位一样
+            // 直接接受并应用，而不是把请求丢掉。
+            modelMode: 'nullable',
             modelReasoningEffortMode: 'ignore',
             effortMode: 'ignore',
-            onApply: (config) => this.applyPermissionMode(config.permissionMode),
+            onApply: async (config) => {
+                await this.applyPermissionMode(config.permissionMode)
+                await this.applyModel(config.model)
+            },
             appliedFallback: () => ({
                 permissionMode: this.session.getPermissionMode() ?? 'default'
             })
         })
+        // 模型列表取自本会话的 ACP 配置选项，因此只能在这里注册（依赖 acpSessionId）。
+        // CodeBuddy 在会话就绪后随即下发 config_option_update，正常情况下第一次
+        // 请求就能取到；取不到时如实返回失败，让手机端提示而不是显示空列表。
+        this.session.client.rpcHandlerManager.registerHandler(
+            RPC_METHODS.ListCodebuddyModels,
+            async () => {
+                const acpSessionId = this.acpSessionId
+                const option = this.backend && acpSessionId
+                    ? this.backend.getConfigOptionByCategory(acpSessionId, 'model')
+                    : undefined
+                if (!option) {
+                    return { success: false, error: '会话尚未下发模型列表' }
+                }
+                return {
+                    success: true,
+                    currentModelId: option.currentValue ?? null,
+                    models: option.options.map((entry) => ({
+                        modelId: entry.value,
+                        name: entry.name,
+                        description: entry.description
+                    }))
+                }
+            }
+        )
         this.setupAbortHandlers(this.session.client.rpcHandlerManager, {
             onAbort: () => this.handleAbort(),
             onSwitch: () => this.handleExitFromUi()
@@ -208,6 +239,25 @@ export class CodeBuddyRemoteLauncher extends RemoteLauncherBase {
         if (mode === current) return
         await backend.setConfigOption(acpSessionId, 'mode', mode)
         this.session.setPermissionMode(mode)
+    }
+
+    /**
+     * 通过 ACP 切换模型。
+     *
+     * 与权限档位共用一条通道：CodeBuddy 在 `config_option_update` 里同时下发
+     * `category=model` 的选项（含当前值、展示名与计费倍率），所以直接发
+     * `session/set_config_option`、configId 固定为 `model` 即可，响应会带回
+     * 更新后的完整配置。
+     *
+     * @param model 目标模型 id。null / 空串表示沿用当前模型 —— ACP 的切换请求
+     *   必须带具体值，没有「重置为服务端默认」这种表达。
+     */
+    private async applyModel(model: string | null | undefined): Promise<void> {
+        const backend = this.backend
+        const acpSessionId = this.acpSessionId
+        if (!backend || !acpSessionId || !model) return
+        await backend.setConfigOption(acpSessionId, 'model', model)
+        this.session.setModel(model)
     }
 
     private async handleAbort(): Promise<void> {

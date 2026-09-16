@@ -25,6 +25,60 @@ function asNumber(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** 一个额度时间窗：已用百分比，以及窗口长度和下次重置时间。 */
+type RateLimitWindow = {
+    usedPercent: number;
+    windowMinutes: number | null;
+    resetsAt: number | null;
+};
+
+/**
+ * 归一化 Codex 下发的额度快照。
+ *
+ * 字段键名在 app-server 上有 camelCase 与 snake_case 两套，这里统一成 camelCase
+ * 再下发，客户端只需认一种。Codex 只有在真正受限时才会填 `primary`/`secondary`，
+ * 平时是 null，因此这里允许缺省，只要求至少有一个可展示的字段。
+ *
+ * @param value 原始额度对象
+ * @returns 没有任何可用字段时返回 null，避免客户端拿到空壳
+ */
+function normalizeRateLimits(value: unknown): Record<string, unknown> | null {
+    const record = asRecord(value);
+    if (!record) {
+        return null;
+    }
+    const primary = asRateLimitWindow(record.primary);
+    const secondary = asRateLimitWindow(record.secondary);
+    const planType = asString(record.planType ?? record.plan_type);
+    const credits = asRecord(record.credits);
+    const hasCredits = asBoolean(credits?.hasCredits ?? credits?.has_credits);
+    if (!primary && !secondary && !planType && hasCredits === null) {
+        return null;
+    }
+    return {
+        ...(primary ? { primary } : {}),
+        ...(secondary ? { secondary } : {}),
+        ...(planType ? { planType } : {}),
+        ...(hasCredits === null ? {} : { hasCredits })
+    };
+}
+
+function asRateLimitWindow(value: unknown): RateLimitWindow | null {
+    const record = asRecord(value);
+    if (!record) {
+        return null;
+    }
+    const usedPercent = asNumber(record.usedPercent ?? record.used_percent);
+    if (usedPercent === null) {
+        return null;
+    }
+    return {
+        usedPercent,
+        windowMinutes: asNumber(record.windowMinutes ?? record.window_minutes),
+        resetsAt: asNumber(record.resetsAt ?? record.resets_at)
+    };
+}
+
 function extractItemId(params: Record<string, unknown>): string | null {
     const direct = asString(params.itemId ?? params.item_id ?? params.id);
     if (direct) return direct;
@@ -665,6 +719,21 @@ export class AppServerEventConverter {
         }
 
         if (method === 'account/rateLimits/updated') {
+            // Codex 用它推送套餐额度（各时间窗已用比例、重置时间、套餐类型）。
+            // 此前这里直接丢弃，手机端因此完全看不到额度。额度单独成一条
+            // token_count 消息下发：此时没有 token 用量，`info` 省略，客户端只
+            // 渲染额度而不显示上下文状态。
+            const rateLimits = normalizeRateLimits(
+                paramsRecord.rateLimits ?? paramsRecord.rate_limits ?? paramsRecord
+            );
+            if (!rateLimits) {
+                return events;
+            }
+            events.push(scoped({
+                type: 'token_count',
+                ...INCLUSIVE_INPUT_TOKEN_USAGE_MARKER,
+                rateLimits
+            }));
             return events;
         }
 
@@ -785,7 +854,16 @@ export class AppServerEventConverter {
 
         if (method === 'thread/tokenUsage/updated') {
             const info = asRecord(paramsRecord.tokenUsage ?? paramsRecord.token_usage ?? paramsRecord) ?? {};
-            events.push(scoped({ type: 'token_count', ...INCLUSIVE_INPUT_TOKEN_USAGE_MARKER, info }));
+            // 部分版本把限流信息附在用量更新里一起推，能带上就带上，省一次通知。
+            const rateLimits = normalizeRateLimits(
+                paramsRecord.rateLimits ?? paramsRecord.rate_limits
+            );
+            events.push(scoped({
+                type: 'token_count',
+                ...INCLUSIVE_INPUT_TOKEN_USAGE_MARKER,
+                info,
+                ...(rateLimits ? { rateLimits } : {})
+            }));
             return events;
         }
 
