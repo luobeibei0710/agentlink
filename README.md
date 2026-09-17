@@ -35,14 +35,24 @@
 
 | 目录 | 内容 |
 | --- | --- |
-| `flutter/` | Android 客户端（Dart） |
+| `flutter/` | **本项目的 Android 客户端**（Dart），交付物在这里 |
 | `cli/` | Runner 与各 agent 适配，含 `cli/src/codebuddy/` |
 | `hub/` | 会话同步中枢与 HTTP 路由 |
 | `shared/` | 跨端协议、Schema 与权限档位定义 |
 | `web/` | Web 客户端 |
-| `scripts/dev/` | 局域网 Host、设备联调与冒烟脚本 |
-| `docs/` | 需求、架构与逐轮验证记录 |
+| `scripts/dev/` | 局域网 / 公网 Host、设备联调与冒烟脚本 |
+| `design/agentlink/` | 界面设计说明与 Figma 链接 |
+| `docs/` | 架构、Host 说明与逐轮验收记录 |
 | `artifacts/` | 本地构建的 APK，**未纳入版本库** |
+
+下面这些来自上游 hapi，**本项目未使用**。它们占据了仓库里大部分文件（Kotlin / Swift 各近 300 个），第一次翻仓库时容易看混：
+
+| 目录 | 内容 |
+| --- | --- |
+| `android/` | 上游的 Kotlin Android 客户端，与本项目的 `flutter/` 无关 |
+| `ios/` | 上游的 Swift iOS 客户端 |
+| `relay/` | 上游的官方 relay 服务（`relay.hapi.run` 那套） |
+| `e2e/` | 上游的 Playwright 端到端用例 |
 
 ## 与原版 hapi 的关系
 
