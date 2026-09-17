@@ -1,9 +1,26 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// 发布签名。密钥与口令都不入库：本机放 `flutter/android/key.properties`（已 gitignore），
+// CI 从仓库 secrets 还原出同名文件。
+//
+// 缺这份文件时回落到 debug 签名，好让贡献者不做额外准备也能构建。但 debug 签名在 CI 上
+// 每次运行都是**新生成**的密钥，用户装过旧版本就覆盖不上去（Android 报「应用未安装」，
+// 必须先卸载），所以正式发布必须提供 key.properties。
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("key.properties")
+    if (file.exists()) {
+        FileInputStream(file).use { load(it) }
+    }
+}
+val hasReleaseKey = keystoreProperties.getProperty("storeFile") != null
 
 android {
     namespace = "app.agentlink.companion"
@@ -23,7 +40,6 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "app.agentlink.companion"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -33,11 +49,28 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseKey) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.warn(
+                    "AgentLink: 未找到 android/key.properties，本次发布使用 debug 签名。" +
+                        "这样构建出的包无法覆盖安装已发布版本，仅适合本地验证。"
+                )
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
