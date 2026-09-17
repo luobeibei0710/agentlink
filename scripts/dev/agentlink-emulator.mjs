@@ -2,6 +2,7 @@
 // Integration QA on an explicitly chosen disposable Android emulator only.
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
+import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -54,7 +55,13 @@ if (process.argv.includes('--seed')) {
 }
 if (process.argv.includes('--link')) {
   const link = `hapicompanion://bind?hub=${encodeURIComponent(url)}&code=${encodeURIComponent(accessToken)}`;
-  const adb = process.env.ADB || '/Users/llvision/Library/Android/sdk/platform-tools/adb';
+  // 依次看 ADB / ANDROID_HOME / ANDROID_SDK_ROOT，最后退回 macOS 上的默认安装位置。
+  // 这里原先写死了一个绝对路径，只在开发者本机成立，别人跑就找不到 adb。
+  const adb = process.env.ADB
+    ?? resolve(
+      process.env.ANDROID_HOME ?? process.env.ANDROID_SDK_ROOT ?? resolve(homedir(), 'Library/Android/sdk'),
+      'platform-tools/adb'
+    );
   const result = spawnSync(adb, ['-s', device, 'shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', `'${link}'`, 'app.agentlink.companion'], { encoding: 'utf8' });
   if (result.status !== 0) throw new Error('Emulator could not open pairing link');
   console.log('Pairing link delivered to disposable emulator; token omitted');
