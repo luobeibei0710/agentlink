@@ -1,0 +1,71 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支连续推送时，把上一次还没跑完的顶掉，避免排队堆积。
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: 电脑端（Hub / CLI / Web / Shared）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.0'
+
+      - name: 安装依赖
+        run: bun install --frozen-lockfile
+
+      - name: 类型检查
+        run: bun run typecheck
+
+      - name: Hub 测试
+        run: cd hub && bun test
+
+      - name: Shared 测试
+        run: cd shared && bun test
+
+      - name: Web 测试
+        run: cd web && bun run test
+
+      # cli 的 test 脚本会先解包仓库里按平台分发的 difftastic / ripgrep，
+      # 归档文件（含 x64-linux）已入库，因此 Linux runner 上可用。
+      - name: CLI 测试
+        run: cd cli && bun run test
+
+  android:
+    name: 手机端（analyze / test）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 与发布流水线用同一个版本：pubspec 要求 Dart ^3.11.5，3.41.8 与之匹配。
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.8'
+          channel: stable
+          cache: true
+
+      - name: 安装依赖
+        working-directory: flutter
+        run: flutter pub get
+
+      - name: 静态检查
+        working-directory: flutter
+        run: flutter analyze
+
+      - name: 测试（含渲染快照）
+        working-directory: flutter
+        run: flutter test
