@@ -4,6 +4,11 @@
 
 代码库同时包含电脑端的调度服务与 Android 客户端。
 
+> **本项目基于 [tiann/hapi](https://github.com/tiann/hapi) 构建**，沿用其 AGPL-3.0 许可。
+> Hub、Runner、跨端协议与 Web 客户端的主体来自上游；AgentLink 在其之上加入了 Android
+> 客户端、CodeBuddy 适配、公网 Host、用量与额度等能力，详见
+> [与原版 hapi 的关系](#与原版-hapi-的关系)。
+
 ## 架构
 
 ```
@@ -38,6 +43,22 @@
 | `scripts/dev/` | 局域网 Host、设备联调与冒烟脚本 |
 | `docs/` | 需求、架构与逐轮验证记录 |
 | `artifacts/` | 本地构建的 APK，**未纳入版本库** |
+
+## 与原版 hapi 的关系
+
+上游 [hapi](https://github.com/tiann/hapi) 解决的是「在浏览器里接管 Codex 会话」；AgentLink 把它延伸到手机上，并补齐了若干上游没有的部分。分清边界对二次开发很重要：
+
+**来自上游**：Hub 的会话同步与权限路由、Runner、ACP / Codex 适配、跨端协议（`shared/`）、Web 客户端（`web/`）。
+
+**本项目新增或改动较大**：
+
+| 方向 | 内容 | 位置 |
+| --- | --- | --- |
+| Android 客户端 | 上游只有 iOS 原生与 Web；项目、会话、对话、审批、权限档位、模型切换、用量与额度都在这里 | `flutter/` |
+| CodeBuddy 适配 | 走其 ACP 协议接入，含 8 档权限模式与运行中切换模型。**未复制 Octop 代码** | `cli/src/codebuddy/` |
+| 公网 Host | 用 Cloudflare 隧道替代官方 relay，一键起隧道并生成配对码 | `scripts/dev/agentlink-public.mjs` |
+| 用量与额度 | Hub 侧用量汇总（本机消耗与导入历史分开）、Codex 账户额度的端到端透传 | `hub/src/sync/usageService.ts` |
+| 会话恢复 | 导入的历史会话在电脑上没有进程，发送时自动恢复，不必先手动「继续」 | `flutter/lib/app_model.dart` |
 
 ## 快速开始
 
@@ -135,6 +156,8 @@ flutter test --update-goldens
 | [docs/lan-host.md](docs/lan-host.md) | 电脑端局域网 Host 说明 |
 | [docs/public-host.md](docs/public-host.md) | 公网连接：Cloudflare 隧道、固定域名与已知的 DNS 同步问题 |
 
-## 许可
+## 来源与许可
 
-见 [LICENSE](LICENSE)。
+基于 [tiann/hapi](https://github.com/tiann/hapi)，遵循仓库 [AGPL-3.0](LICENSE) 许可。
+
+AGPL-3.0 具有传染性：分发本项目的修改版（**包括以网络服务形式对外提供**）时，需要一并提供对应源码与许可声明。CodeBuddy 接入是基于其 ACP 协议的独立实现，没有复制 Octop 源代码。
