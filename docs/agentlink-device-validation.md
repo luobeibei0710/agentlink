@@ -5,7 +5,7 @@
 ## 2026-09-15 继续验证
 
 - 电脑换到新的局域网，当前地址为 `10.33.48.112`。已重新启动 Host，确认 TLS 3107 在新地址监听。下文的 `192.168.1.202` 是 9 月 14 日的历史验证地址。
-- 在新地址再次执行真实服务联调：`AGENTLINK_LIVE_ADDRESS=10.33.48.112 AGENTLINK_LIVE_HOME=/Users/llvision/.agentlink flutter test test/device_pairing_live_test.dart --no-pub --reporter expanded`，1 项通过。覆盖发现、数字确认、保存后重连、撤销授权；仍为 macOS Flutter 测试环境，不是 Android 设备执行。日志：`/tmp/agentlink-device-live-20260915.log`。
+- 在新地址再次执行真实服务联调：`AGENTLINK_LIVE_ADDRESS=10.33.48.112 AGENTLINK_LIVE_HOME=$HOME/.agentlink flutter test test/device_pairing_live_test.dart --no-pub --reporter expanded`，1 项通过。覆盖发现、数字确认、保存后重连、撤销授权；仍为 macOS Flutter 测试环境，不是 Android 设备执行。日志：`/tmp/agentlink-device-live-20260915.log`。
 - 修正电脑启动器的旧提示：已有服务运行时，使用设备管理页核对数字。`zsh -n 启动局域网连接.command` 通过。本次未改 Flutter 源码，APK 保持 1.3.0，哈希不变。
 - ADB 未发现设备；模拟器可执行文件及 AVD 仍缺失。SDK 安装器无进展后已停止；官方稳定版模拟器压缩包的直接下载、断点续传及最后一次限时分段下载均未能完成，最后报 `TimeoutError: range deadline`。因此未安装未经完整校验的文件，未完成模拟器安装和 Android 页面验证。已有系统镜像不能替代缺失的模拟器程序。
 - 真机验收步骤仍见本文末尾。不要将本次新地址联调等同于真机跨 Wi-Fi 或 Android 自动发现验收。

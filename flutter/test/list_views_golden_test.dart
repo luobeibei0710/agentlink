@@ -27,7 +27,7 @@ class _StubApi extends HapiApi {
   void close() {}
 }
 
-const _project = '/Users/llvision/Desktop/商业化项目/hapi-codebuddy-android';
+const _project = '/work/demo-app';
 
 /// 相对当前时间构造会话，使相对时间文案在每次运行中保持恒定。
 SessionSummary _session({
@@ -83,7 +83,7 @@ void main() {
         title: '接入埋点',
         active: false,
         minutesAgo: 60 * 30,
-        cwd: '/Users/llvision/Desktop/slim-glass-app',
+        cwd: '/work/design-app',
       ),
     ]);
 

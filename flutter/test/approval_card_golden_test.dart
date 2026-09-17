@@ -22,7 +22,7 @@ void main() {
         kind: 'permission',
         args: {
           'command': 'rm -rf node_modules && npm install',
-          'cwd': '/Users/llvision/Desktop/商业化项目/hapi-codebuddy-android',
+          'cwd': '/work/demo-app',
         },
       ),
       // 写文件：路径 + 改动行数。
@@ -31,7 +31,7 @@ void main() {
         tool: 'Write',
         kind: 'permission',
         args: {
-          'file_path': '/Users/llvision/Desktop/hapi-codebuddy-android/lib/main.dart',
+          'file_path': '/work/demo-app/lib/main.dart',
           'content': List.filled(42, 'line').join('\n'),
         },
       ),
