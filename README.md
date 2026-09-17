@@ -155,11 +155,13 @@ flutter build apk --release
 
 ## 版本
 
-当前客户端 **1.12.0**（`versionCode 15`），由 `flutter/pubspec.yaml` 的 `version` 字段决定，构建时不需要再传 `--build-name`：
+当前客户端 **1.12.1**（`versionCode 16`），由 `flutter/pubspec.yaml` 的 `version` 字段决定，构建时不需要再传 `--build-name`：
 
 ```bash
-cd flutter && flutter build apk --release   # → 1.12.0+15
+cd flutter && flutter build apk --release   # → 1.12.1+16
 ```
+
+**发布是自动的**：推送 `v*` tag 会触发 [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) —— 校验 tag 与 pubspec 版本一致后构建 APK、生成 `SHA256SUMS.txt`，挂到同名 Release。也可以在 Actions 页面手动指定 tag 重发。签名密钥的配置见 [CONTRIBUTING.md](CONTRIBUTING.md#发布与签名)。
 
 `shared/src/buildInfo.ts` 里的 `0.30.3` 是**上游 hapi 的版本号**，用于定位 `~/.agentlink/runtime/<version>` 下的运行时目录 —— **不要跟着客户端一起改**，否则会找不到已下载的运行时。
 

@@ -82,6 +82,26 @@ docs: 充实 README —— 系统要求、会话交互与模型切换、常见�
 
 按领域拆分提交，不要把无关模块塞进同一个 commit。
 
+## 发布与签名
+
+发布由 tag 触发（`.github/workflows/android-release.yml`）：推一个 `v1.12.2` 这样的 tag 就会构建 APK 并挂到同名 Release。**tag 必须与 `flutter/pubspec.yaml` 的版本一致**，否则 workflow 直接失败。
+
+发布包用正式密钥签名，密钥与口令都不入库：
+
+- **CI**：从仓库 secrets 还原 —— `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。缺任何一个都会让 workflow 失败（**不会**悄悄退回 debug 签名）。
+- **本机**：把密钥放在仓库外（例如 `~/.agentlink/android/agentlink-release.jks`），再写 `flutter/android/key.properties`（已被 `.gitignore` 忽略）：
+
+```properties
+storeFile=/绝对路径/agentlink-release.jks
+storePassword=…
+keyAlias=agentlink
+keyPassword=…
+```
+
+没有 `key.properties` 时本地构建会回落到 **debug 签名** —— 能装能跑，但**无法覆盖安装已发布版本**（Android 报「应用未安装」）。仅供本地验证，别拿去发布。
+
+> 签名密钥一旦丢失，就无法再给已发布版本推送更新（Android 要求同一应用的更新必须同签名）。请把 keystore 与口令备份到安全的地方。
+
 ## 提交 PR
 
 1. 从 `main` 切分支，命名如 `fix/hub-migration-idempotent`；
