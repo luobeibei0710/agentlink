@@ -33,6 +33,14 @@
 | 局域网发现 | `3108` (UDP) | 广播发现电脑 |
 | 本机管理页 | `3109` | 仅监听 `127.0.0.1`，用于核对配对数字与撤销设备 |
 
+## 界面
+
+| 工作台 | 会话列表 | 对话 |
+| :---: | :---: | :---: |
+| <img src="docs/images/projects.png" width="230" alt="工作台"> | <img src="docs/images/sessions.png" width="230" alt="会话列表"> | <img src="docs/images/transcript.png" width="230" alt="对话"> |
+
+三张都是**用演示数据渲染出来的**（来自 `flutter/test/goldens/` 的渲染快照），不含任何真实项目名或路径，也不会随实际使用而失真 —— 界面改动后跑一次 `flutter test --update-goldens` 就能更新。第三张里能看到 Markdown 与代码块、工具卡片、思考行，以及右下角的用量状态行。
+
 ## 目录
 
 | 目录 | 内容 |

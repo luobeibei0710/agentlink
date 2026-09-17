@@ -33,6 +33,14 @@ In LAN mode, `scripts/dev/agentlink-host.mjs` brings up the Hub, the Runner, and
 | LAN discovery | `3108` (UDP) | Broadcast to find the computer |
 | Local admin page | `3109` | Bound to `127.0.0.1`; verify the pairing digits and revoke devices |
 
+## Screens
+
+| Projects | Sessions | Transcript |
+| :---: | :---: | :---: |
+| <img src="docs/images/projects.png" width="230" alt="Projects"> | <img src="docs/images/sessions.png" width="230" alt="Sessions"> | <img src="docs/images/transcript.png" width="230" alt="Transcript"> |
+
+All three are **rendered from demo data** (render snapshots under `flutter/test/goldens/`), so they contain no real project names or paths and cannot drift out of date — re-run `flutter test --update-goldens` after a UI change to refresh them. The third one shows Markdown and code blocks, tool cards, a reasoning line, and the token-usage status line at the bottom.
+
 ## Layout
 
 | Directory | Contents |

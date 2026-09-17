@@ -69,6 +69,17 @@ cd flutter && flutter test --update-goldens
 
 注意快照是**按平台生成**的：同一份代码在 macOS 与 Linux 上光栅化结果不同（实测差异 1.9%–4.3%）。快照用 macOS 生成，所以 CI 用 `flutter test --exclude-tags golden` 跳过它们（见 `flutter/dart_test.yaml`）—— 换了平台开发的话，别把快照更新进去。
 
+快照渲染的是**可读的文字与图标**：`test/flutter_test_config.dart` 会加载仓库内置的中文字体子集（`test/fonts/`，约 200KB，只含源码用到的字符）以及 Flutter SDK 自带的 Material 图标字体。少了前者，快照会退化成整片方块 —— 比对依然"通过"，但没人看得出差异，所以缺字体时直接报错而不是跳过。
+
+README 里的三张界面图就是快照的副本，界面改动后要一起更新：
+
+```bash
+cd flutter && flutter test --update-goldens
+cp test/goldens/projects.png ../docs/images/projects.png
+cp test/goldens/sessions.png ../docs/images/sessions.png
+cp test/goldens/message_views.png ../docs/images/transcript.png
+```
+
 **不要提交构建产物与密钥。** `artifacts/`、`flutter/build/`、`.dart_tool/` 已在 `.gitignore` 中；发布用的 APK 走 GitHub Release，不入库。`~/.agentlink/settings.json` 里存的是长期有效的配对码，别贴进 issue 或提交。
 
 ## 提交信息
