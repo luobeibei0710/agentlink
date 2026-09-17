@@ -1,3 +1,6 @@
+@Tags(['golden'])
+library;
+
 import 'dart:convert';
 
 import 'package:companion/agentlink_theme.dart';

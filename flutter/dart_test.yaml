@@ -1,0 +1,7 @@
+# 渲染快照是**按平台生成**的：同一份代码在 macOS 与 Linux 上光栅化结果不同
+# （实测差异 1.9%–4.3%），因此 CI 用 `flutter test --exclude-tags golden` 跳过，
+# 只在本地跑 —— 开发者用 macOS，快照也由 macOS 生成。
+#
+# 本地更新快照：flutter test --update-goldens
+tags:
+  golden:

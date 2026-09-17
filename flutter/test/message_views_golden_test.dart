@@ -1,3 +1,6 @@
+@Tags(['golden'])
+library;
+
 import 'package:companion/agentlink_theme.dart';
 import 'package:companion/domain.dart';
 import 'package:companion/message_views.dart';

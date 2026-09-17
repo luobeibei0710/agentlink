@@ -66,6 +66,9 @@ jobs:
         working-directory: flutter
         run: flutter analyze
 
-      - name: 测试（含渲染快照）
+      # 渲染快照是按平台生成的（同一份代码在 macOS 与 Linux 上像素结果不同，
+      # 实测差 1.9%–4.3%），所以这里跳过 golden 标签。快照仍在本地跑，见
+      # flutter/dart_test.yaml 与 CONTRIBUTING.md。
+      - name: 测试（跳过按平台生成的渲染快照）
         working-directory: flutter
-        run: flutter test
+        run: flutter test --exclude-tags golden
