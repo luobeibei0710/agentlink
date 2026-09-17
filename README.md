@@ -1,5 +1,7 @@
 # AgentLink
 
+**中文** · [English](README.en.md)
+
 在 Android 手机上接管电脑上运行的 **Codex** 与 **CodeBuddy** 会话：浏览历史项目、查看对话、审批等待中的操作，并在需要时切换权限档位。
 
 代码库同时包含电脑端的调度服务与 Android 客户端。

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用排查（扫不到电脑 / 连不上 / 隧道地址打不开 / 看不到额度）
+    url: https://github.com/luobeibei0710/agentlink/blob/main/README.md#常见问题
+    about: 这几类问题在 README 的「常见问题」里都有答案，先看一眼能省一轮往返
+  - name: 上游 hapi
+    url: https://github.com/tiann/hapi
+    about: 与本项目新增部分无关的问题（Hub 同步、Web 客户端等）属于上游范畴

@@ -1,0 +1,71 @@
+name: 问题反馈
+description: 报告一个可复现的问题
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先看 README 的[常见问题](https://github.com/luobeibei0710/agentlink/blob/main/README.md#常见问题)
+        与[已知限制](https://github.com/luobeibei0710/agentlink/blob/main/README.md#已知限制)——
+        扫不到电脑、隧道地址在电脑上打不开、看不到额度这类情况在那里有答案。
+
+        ⚠️ **不要贴配对码**、`~/.agentlink/settings.json` 的内容，或任何 token。
+
+  - type: dropdown
+    id: side
+    attributes:
+      label: 出问题的一侧
+      options:
+        - 手机端（App）
+        - 电脑端（Hub / Runner）
+        - 两端连不上
+        - 构建或发布
+    validations:
+      required: true
+
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 现象
+      description: 实际发生了什么，期望是什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 …
+        2. 点击 …
+        3. 出现 …
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: 版本
+      description: App 版本、Hub 的提交号（`git rev-parse --short HEAD`）、`codex` / `codebuddy` 的版本
+    validations:
+      required: true
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: 连接方式
+      options:
+        - 局域网
+        - 公网隧道
+        - 不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: 电脑端 Host 终端的输出。**贴之前请删掉配对码与地址等信息。**
+      render: shell
+    validations:
+      required: false
