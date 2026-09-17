@@ -90,6 +90,8 @@ HAPI_BUN_BIN="$HOME/.local/bin/bun" node scripts/dev/agentlink-host.mjs --lan
 
 ### 手机端
 
+不想自己构建的话，直接到 [Releases](https://github.com/luobeibei0710/agentlink/releases) 下载 APK 安装（Android 7.0+）。自行构建：
+
 ```bash
 cd flutter
 flutter pub get
@@ -193,6 +195,7 @@ flutter test --update-goldens
 | [docs/agentlink-lan-validation.md](docs/agentlink-lan-validation.md) | 局域网模式验证 |
 | [docs/lan-host.md](docs/lan-host.md) | 电脑端局域网 Host 说明 |
 | [docs/public-host.md](docs/public-host.md) | 公网连接：Cloudflare 隧道、固定域名与已知的 DNS 同步问题 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、提交前必跑的检查与容易踩的约定 |
 
 ## 来源与许可
 
