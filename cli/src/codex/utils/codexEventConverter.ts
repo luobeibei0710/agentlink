@@ -592,14 +592,22 @@ export function convertCodexEvent(rawEvent: unknown): CodexEventProjection | nul
 
         if (eventType === 'token_count') {
             const info = asRecord(payloadRecord.info);
-            if (!info) {
+            const rateLimits = asRecord(payloadRecord.rate_limits ?? payloadRecord.rateLimits);
+            // 只带额度的 token_count 也要留下：Codex 用它单独推送套餐用量（此时
+            // `info` 为 null），丢掉就等于导入的历史完全没有额度信息。
+            //
+            // 注意这里与 `appServerEventConverter` 是**两条独立的路径**：那个转换
+            // 器处理运行中的事件，这个处理导入时读到的转录。两边都要带上额度，只
+            // 修一个会导致「实时会话有额度、导入的历史没有」。
+            if (!info && !rateLimits) {
                 return null;
             }
             return {
                 messages: [{
                     type: 'token_count',
                     ...INCLUSIVE_INPUT_TOKEN_USAGE_MARKER,
-                    info,
+                    ...(info ? { info } : {}),
+                    ...(rateLimits ? { rateLimits } : {}),
                     id: randomUUID()
                 }]
             };

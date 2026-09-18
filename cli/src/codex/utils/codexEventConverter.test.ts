@@ -128,6 +128,46 @@ describe('convertCodexEvent', () => {
         });
     });
 
+    it('keeps a rate-limit-only token_count when reading a transcript', () => {
+        // Codex 只在额度变化时单独推一条 token_count：`info` 为 null，只有额度。
+        // 导入路径此前会把它整条丢掉，于是导入的历史永远看不到额度。
+        const result = convertCodexEvent({
+            type: 'event_msg',
+            payload: {
+                type: 'token_count',
+                info: null,
+                rate_limits: {
+                    primary: { used_percent: 99, window_minutes: 10080, resets_at: 1789819456 },
+                    plan_type: 'pro'
+                }
+            }
+        });
+
+        expect(result?.messages?.[0]).toMatchObject({
+            type: 'token_count',
+            rateLimits: {
+                primary: { used_percent: 99, window_minutes: 10080, resets_at: 1789819456 },
+                plan_type: 'pro'
+            }
+        });
+    });
+
+    it('keeps rate limits alongside usage in the same transcript event', () => {
+        const result = convertCodexEvent({
+            type: 'event_msg',
+            payload: {
+                type: 'token_count',
+                info: { total_token_usage: { input_tokens: 10, output_tokens: 1 } },
+                rate_limits: { primary: { used_percent: 42, window_minutes: 300, resets_at: 1789000000 } }
+            }
+        });
+
+        expect(result?.messages?.[0]).toMatchObject({
+            type: 'token_count',
+            rateLimits: { primary: { used_percent: 42, window_minutes: 300, resets_at: 1789000000 } }
+        });
+    });
+
     it('converts completed plan items into proposed plan messages', () => {
         const result = convertCodexEvent({
             type: 'event_msg',
