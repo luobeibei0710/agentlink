@@ -485,6 +485,12 @@ class ChatMessage {
           toolFailed: _toolResultFailed(d),
         );
       case 'token_count':
+        // 只带额度、没有用量的记录不进对话：Codex 受限时会单独推一条只有
+        // `rateLimits` 的 token_count，渲染成「Context updated」纯属噪音 ——
+        // 额度是用量页的事。其余形态（含字段缺失的旧数据）保持原来的状态行。
+        if (!d.containsKey('info') && d.containsKey('rateLimits')) {
+          return _hidden;
+        }
         return _parsed(
           MessageView.status,
           text: formatTokenCountLabel(d),

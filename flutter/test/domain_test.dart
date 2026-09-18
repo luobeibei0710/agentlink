@@ -22,6 +22,17 @@ void main() {
     expect(usage.text, 'Context updated');
     expect(usage.statusIcon, '◷');
 
+    // 只带额度（没有用量）的记录不进对话 —— 额度是用量页的事，在对话里渲染成
+    // 「Context updated」只是噪音。顺带验证额度字段确实被解析了出来。
+    final limitsOnly = agentPayload({
+      'type': 'token_count',
+      'rateLimits': {
+        'primary': {'used_percent': 99, 'window_minutes': 10080},
+      },
+    });
+    expect(limitsOnly.view, MessageView.hidden);
+    expect(limitsOnly.rateLimits?.primary?.usedPercent, 99);
+
     final cleared = agentPayload({'type': 'thread_goal_cleared'});
     expect(cleared.view, MessageView.status);
     expect(cleared.text, 'Goal cleared');
