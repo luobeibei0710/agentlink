@@ -29,7 +29,9 @@ export type CodexMessage = {
     delta: string;
 } | {
     type: 'token_count';
-    info: Record<string, unknown>;
+    // 两者都可缺省：Codex 有时只推用量，有时只推额度（套餐受限时）。
+    info?: Record<string, unknown>;
+    rateLimits?: Record<string, unknown>;
     id: string;
     usageSchema: InclusiveInputTokenUsageMarker['usageSchema'];
     inputTokenSemantics: InclusiveInputTokenUsageMarker['inputTokenSemantics'];
